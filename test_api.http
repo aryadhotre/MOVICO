@@ -1,0 +1,53 @@
+@baseUrl = http://localhost:8000/api
+
+### 1. Health Check
+GET {{baseUrl}}/system/health
+
+### 2. User Registration
+# @name register
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "username": "developer",
+  "email": "dev@example.com",
+  "password": "strongpassword123"
+}
+
+### 3. User Login (Obtain Access Token)
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username=developer&password=strongpassword123
+
+### 4. Get Current Authenticated Profile
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 5. Search Movies
+GET {{baseUrl}}/movies/search?q=Toy
+
+### 6. Submit Movie Rating
+POST {{baseUrl}}/ratings/
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "movie_id": 1,
+  "rating": 5.0
+}
+
+### 7. Get Rating History
+GET {{baseUrl}}/ratings/history
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 8. Get Personalized Recommendations
+GET {{baseUrl}}/recommendations/
+Authorization: Bearer {{login.response.body.access_token}}
+
+### 9. Get Similar Movies (Content-Based)
+GET {{baseUrl}}/movies/1/similar?method=content&limit=5
+
+### 10. Get System Metrics
+GET {{baseUrl}}/system/metrics
