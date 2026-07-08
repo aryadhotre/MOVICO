@@ -38,10 +38,38 @@ class MovieCreate(MovieBase):
 
 class MovieResponse(MovieBase):
     popularity_score: float
+
+    # TMDB enrichment fields
+    poster_path: Optional[str] = None
+    backdrop_path: Optional[str] = None
+    overview: Optional[str] = None
+    release_date: Optional[str] = None
+    director: Optional[str] = None
+    cast_list: Optional[str] = None
+    runtime: Optional[int] = None
+    vote_average: Optional[float] = None
+    original_language: Optional[str] = None
+    tagline: Optional[str] = None
+
+    # Computed convenience fields for the frontend
+    poster_url: Optional[str] = None
+    backdrop_url: Optional[str] = None
+
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+    @classmethod
+    def from_orm(cls, obj):
+        """Override from_orm to compute full poster/backdrop URLs from TMDB paths."""
+        TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p"
+        instance = super().from_orm(obj)
+        if instance.poster_path:
+            instance.poster_url = f"{TMDB_IMAGE_BASE}/w500{instance.poster_path}"
+        if instance.backdrop_path:
+            instance.backdrop_url = f"{TMDB_IMAGE_BASE}/original{instance.backdrop_path}"
+        return instance
 
 # Rating Schemas
 class RatingBase(BaseModel):

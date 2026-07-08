@@ -11,6 +11,7 @@ services:
       - APP_NAME=MOVICO
       - SECRET_KEY=your-production-secret-key-change-this
       - ACCESS_TOKEN_EXPIRE_MINUTES=60
+      - USE_SQLITE=false
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
       - POSTGRES_USER=movico_user
@@ -21,6 +22,11 @@ services:
       - REDIS_DB=0
       - DATA_DIR=/workspace/data
       - MODELS_DIR=/workspace/models_checkpoint
+      - MOVIELENS_DATASET_URL=https://files.grouplens.org/datasets/movielens/ml-latest.zip
+      - TMDB_API_KEY=${TMDB_API_KEY:-your-tmdb-api-key-here}
+      - TRAINING_SAMPLE_SIZE=5000000
+      - SVD_EPOCHS=20
+      - SVD_FACTORS=50
     volumes:
       - ./data:/workspace/data
       - ./models_checkpoint:/workspace/models_checkpoint

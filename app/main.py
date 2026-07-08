@@ -23,8 +23,8 @@ logger = logging.getLogger("app.main")
 # Initialize FastAPI App
 app = FastAPI(
     title=settings.APP_NAME,
-    description="Production-grade Hybrid Movie Recommendation Service.",
-    version="1.0.0",
+    description="Production-grade Hybrid Movie Recommendation Service with TMDB enrichment.",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -53,7 +53,7 @@ app.include_router(system.router, prefix="/api")
 
 @app.on_event("startup")
 def startup_event():
-    """Ties together table initialization, dataset downloads, database seeding, and initial training on launch."""
+    """Ties together table initialization, dataset downloads, database seeding, TMDB enrichment, and initial training on launch."""
     if settings.APP_ENV == "testing":
         logger.info("Testing environment detected. Skipping startup database seeding and training.")
         return
@@ -77,7 +77,18 @@ def startup_event():
             from app.models.trainer import train_and_evaluate_models
             train_and_evaluate_models(db)
         else:
-            logger.info(f"Database contains {movie_count} movies. Seeding and training skipped.")
+            logger.info(f"Database contains {movie_count:,} movies. Seeding and training skipped.")
+            
+            # Check if TMDB enrichment is pending (movies exist but aren't enriched yet)
+            unenriched = db.query(Movie).filter(
+                Movie.tmdb_id.isnot(None),
+                Movie.tmdb_id != "",
+                Movie.tmdb_id != "nan",
+                Movie.poster_path.is_(None)
+            ).count()
+            if unenriched > 0:
+                logger.info(f"Found {unenriched:,} movies pending TMDB enrichment. Run POST /api/system/enrich to start.")
+                
     except Exception as e:
         logger.error(f"Failed to execute startup migration / training tasks: {str(e)}")
     finally:
@@ -89,7 +100,7 @@ def startup_event():
 def read_root():
     return {
         "app_name": settings.APP_NAME,
-        "version": "1.0.0",
+        "version": "2.0.0",
         "docs_url": "/docs",
         "status": "online"
     }

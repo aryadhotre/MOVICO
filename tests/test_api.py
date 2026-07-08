@@ -6,7 +6,7 @@ def test_health_check(client: TestClient):
     assert response.status_code == 200
     data = response.json()
     assert "status" in data
-    assert "postgres" in data
+    assert "database" in data
     assert "redis" in data
 
 def test_auth_flow(client: TestClient):
@@ -54,6 +54,29 @@ def test_search_movies(client: TestClient):
     assert len(results) > 0
     assert "Toy Story" in results[0]["title"]
 
+def test_search_movies_returns_enriched_fields(client: TestClient):
+    """Verifies that movie search results include TMDB enrichment metadata."""
+    response = client.get("/api/movies/search?q=Toy")
+    assert response.status_code == 200
+    results = response.json()
+    assert len(results) > 0
+    
+    movie = results[0]
+    # Check enriched fields are present (they may be null for some movies)
+    assert "poster_path" in movie
+    assert "overview" in movie
+    assert "director" in movie
+    assert "cast_list" in movie
+    assert "poster_url" in movie
+    assert "backdrop_url" in movie
+    
+    # For Toy Story specifically, we seeded enrichment data
+    assert movie["poster_path"] is not None
+    assert movie["overview"] is not None
+    assert movie["director"] == "John Lasseter"
+    assert "Tom Hanks" in movie["cast_list"]
+    assert movie["poster_url"].startswith("https://image.tmdb.org")
+
 def test_submit_rating(client: TestClient):
     # Get auth token first
     login_response = client.post(
@@ -84,3 +107,15 @@ def test_submit_rating(client: TestClient):
     # User had 3 original ratings + 1 new rating
     assert len(history) == 4
     assert any(item["movie_id"] == 4 for item in history)
+
+def test_database_stats(client: TestClient):
+    """Tests the /api/system/stats endpoint."""
+    response = client.get("/api/system/stats")
+    assert response.status_code == 200
+    data = response.json()
+    assert "total_movies" in data
+    assert "total_ratings" in data
+    assert "tmdb_enriched_movies" in data
+    assert "tmdb_pending_movies" in data
+    assert data["total_movies"] == 5
+    assert data["total_ratings"] == 3

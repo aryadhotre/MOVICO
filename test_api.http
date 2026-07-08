@@ -1,9 +1,12 @@
-@baseUrl = http://localhost:8000/api
+@baseUrl = http://localhost:8005/api
 
 ### 1. Health Check
 GET {{baseUrl}}/system/health
 
-### 2. User Registration
+### 2. Database Statistics & TMDB Enrichment Progress
+GET {{baseUrl}}/system/stats
+
+### 3. User Registration
 # @name register
 POST {{baseUrl}}/auth/register
 Content-Type: application/json
@@ -14,21 +17,24 @@ Content-Type: application/json
   "password": "strongpassword123"
 }
 
-### 3. User Login (Obtain Access Token)
+### 4. User Login (Obtain Access Token)
 # @name login
 POST {{baseUrl}}/auth/login
 Content-Type: application/x-www-form-urlencoded
 
 username=developer&password=strongpassword123
 
-### 4. Get Current Authenticated Profile
+### 5. Get Current Authenticated Profile
 GET {{baseUrl}}/auth/me
 Authorization: Bearer {{login.response.body.access_token}}
 
-### 5. Search Movies
-GET {{baseUrl}}/movies/search?q=Toy
+### 6. Search Movies (returns enriched TMDB data: posters, overview, cast)
+GET {{baseUrl}}/movies/search?q=Toy Story
 
-### 6. Submit Movie Rating
+### 7. Get Single Movie Details
+GET {{baseUrl}}/movies/1
+
+### 8. Submit Movie Ratings (rate a few movies to build taste profile)
 POST {{baseUrl}}/ratings/
 Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: application/json
@@ -38,16 +44,44 @@ Content-Type: application/json
   "rating": 5.0
 }
 
-### 7. Get Rating History
+### 9. Rate another movie
+POST {{baseUrl}}/ratings/
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "movie_id": 356,
+  "rating": 4.5
+}
+
+### 10. Rate another movie
+POST {{baseUrl}}/ratings/
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{
+  "movie_id": 318,
+  "rating": 5.0
+}
+
+### 11. Get Rating History
 GET {{baseUrl}}/ratings/history
 Authorization: Bearer {{login.response.body.access_token}}
 
-### 8. Get Personalized Recommendations
+### 12. Get Personalized Hybrid Recommendations (with TMDB poster URLs, cast, overview)
 GET {{baseUrl}}/recommendations/
 Authorization: Bearer {{login.response.body.access_token}}
 
-### 9. Get Similar Movies (Content-Based)
+### 13. Get Similar Movies (Content-Based)
 GET {{baseUrl}}/movies/1/similar?method=content&limit=5
 
-### 10. Get System Metrics
+### 14. Get System Metrics (RMSE, NDCG, Coverage, etc.)
 GET {{baseUrl}}/system/metrics
+
+### 15. Trigger TMDB Enrichment (requires TMDB_API_KEY in .env)
+# Enriches movie posters, overviews, cast, directors from TMDB API
+# Use limit parameter to enrich in batches: ?limit=500
+POST {{baseUrl}}/system/enrich
+
+### 16. Trigger Model Retraining
+POST {{baseUrl}}/system/train

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database.connection import Base
@@ -25,6 +25,19 @@ class Movie(Base):
     imdb_id = Column(String(20), nullable=True)
     tmdb_id = Column(String(20), nullable=True)
     popularity_score = Column(Float, default=0.0)
+
+    # TMDB enrichment metadata
+    poster_path = Column(String(255), nullable=True)
+    backdrop_path = Column(String(255), nullable=True)
+    overview = Column(Text, nullable=True)
+    release_date = Column(String(20), nullable=True)
+    director = Column(String(255), nullable=True)
+    cast_list = Column(Text, nullable=True)  # Comma-separated top cast names
+    runtime = Column(Integer, nullable=True)
+    vote_average = Column(Float, nullable=True)  # TMDB community vote average
+    original_language = Column(String(10), nullable=True)
+    tagline = Column(String(500), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     ratings = relationship("Rating", back_populates="movie", cascade="all, delete-orphan")
