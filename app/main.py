@@ -1,4 +1,5 @@
 import logging
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import settings
@@ -16,7 +17,6 @@ logging.basicConfig(
         logging.FileHandler(filename="logs/app.log", mode="a", encoding="utf-8") if os.path.exists("logs") else logging.StreamHandler()
     ]
 )
-import os
 os.makedirs("logs", exist_ok=True)
 logger = logging.getLogger("app.main")
 
@@ -54,6 +54,10 @@ app.include_router(system.router, prefix="/api")
 @app.on_event("startup")
 def startup_event():
     """Ties together table initialization, dataset downloads, database seeding, and initial training on launch."""
+    if settings.APP_ENV == "testing":
+        logger.info("Testing environment detected. Skipping startup database seeding and training.")
+        return
+        
     logger.info("Initializing application startup sequence...")
     
     # 1. Create database schema tables if not exist
