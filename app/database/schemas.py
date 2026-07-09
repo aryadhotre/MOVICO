@@ -1,6 +1,10 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import List, Optional
+from typing import List, Optional, Generic, TypeVar
 from datetime import datetime
+import math
+
+# Generic type for paginated items
+T = TypeVar("T")
 
 # Token Schemas
 class Token(BaseModel):
@@ -72,6 +76,31 @@ class MovieResponse(MovieBase):
             instance.backdrop_url = f"{TMDB_IMAGE_BASE}/original{instance.backdrop_path}"
         return instance
 
+# Pagination Schema
+class PaginationMeta(BaseModel):
+    """Pagination metadata included in every paginated response."""
+    page: int = Field(..., description="Current page number (1-indexed)")
+    page_size: int = Field(..., description="Number of items per page")
+    total_items: int = Field(..., description="Total number of items matching the query")
+    total_pages: int = Field(..., description="Total number of pages available")
+    has_next: bool = Field(..., description="Whether there is a next page")
+    has_previous: bool = Field(..., description="Whether there is a previous page")
+
+class PaginatedMovieResponse(BaseModel):
+    """Paginated response containing a list of movies with navigation metadata."""
+    items: List[MovieResponse]
+    pagination: PaginationMeta
+
+class PaginatedRatingResponse(BaseModel):
+    """Paginated response containing a list of ratings with navigation metadata."""
+    items: List["RatingResponse"]
+    pagination: PaginationMeta
+
+class PaginatedWatchlistResponse(BaseModel):
+    """Paginated response containing a list of watchlist items with navigation metadata."""
+    items: List["WatchlistResponse"]
+    pagination: PaginationMeta
+
 # Rating Schemas
 class RatingBase(BaseModel):
     movie_id: int
@@ -108,3 +137,22 @@ class RecommendationResponse(BaseModel):
     movies: List[MovieResponse]
     generated_at: datetime
     execution_time_seconds: float
+
+# Rebuild forward references for paginated schemas
+PaginatedRatingResponse.model_rebuild()
+PaginatedWatchlistResponse.model_rebuild()
+
+
+# ---- Utility Functions ----
+
+def build_pagination_meta(page: int, page_size: int, total_items: int) -> PaginationMeta:
+    """Helper to construct PaginationMeta from query parameters and total count."""
+    total_pages = max(1, math.ceil(total_items / page_size))
+    return PaginationMeta(
+        page=page,
+        page_size=page_size,
+        total_items=total_items,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_previous=page > 1
+    )

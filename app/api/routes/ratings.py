@@ -1,9 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func as sql_func
 from typing import List
 from app.database.connection import get_db
 from app.database.models import Rating, Movie, Watchlist
-from app.database.schemas import RatingCreate, RatingResponse, WatchlistResponse
+from app.database.schemas import (
+    RatingCreate, RatingResponse, WatchlistResponse,
+    PaginatedRatingResponse, PaginatedWatchlistResponse, build_pagination_meta
+)
 from app.api.auth_helper import get_current_user
 from app.database.models import User
 
@@ -47,14 +51,27 @@ def submit_rating(
     db.refresh(new_rating)
     return new_rating
 
-@router.get("/history", response_model=List[RatingResponse])
+@router.get("/history", response_model=PaginatedRatingResponse)
 def get_rating_history(
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
-    """Retrieves all ratings submitted by the current authenticated user."""
-    ratings = db.query(Rating).filter(Rating.user_id == current_user.id).order_by(Rating.timestamp.desc()).all()
-    return ratings
+    """Retrieves paginated rating history for the current authenticated user."""
+    base_query = db.query(Rating).filter(Rating.user_id == current_user.id)
+    
+    # Total count
+    total_items = base_query.count()
+    
+    # Paginate
+    offset = (page - 1) * page_size
+    ratings = base_query.order_by(Rating.timestamp.desc()).offset(offset).limit(page_size).all()
+    
+    return PaginatedRatingResponse(
+        items=ratings,
+        pagination=build_pagination_meta(page, page_size, total_items)
+    )
 
 @router.post("/watchlist", response_model=WatchlistResponse, status_code=status.HTTP_201_CREATED)
 def add_to_watchlist(
@@ -85,14 +102,27 @@ def add_to_watchlist(
     db.refresh(new_item)
     return new_item
 
-@router.get("/watchlist", response_model=List[WatchlistResponse])
+@router.get("/watchlist", response_model=PaginatedWatchlistResponse)
 def get_watchlist(
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
-    """Retrieves all movies in the current user's watchlist."""
-    watchlist_items = db.query(Watchlist).filter(Watchlist.user_id == current_user.id).order_by(Watchlist.added_at.desc()).all()
-    return watchlist_items
+    """Retrieves the current user's watchlist with pagination."""
+    base_query = db.query(Watchlist).filter(Watchlist.user_id == current_user.id)
+    
+    # Total count
+    total_items = base_query.count()
+    
+    # Paginate
+    offset = (page - 1) * page_size
+    watchlist_items = base_query.order_by(Watchlist.added_at.desc()).offset(offset).limit(page_size).all()
+    
+    return PaginatedWatchlistResponse(
+        items=watchlist_items,
+        pagination=build_pagination_meta(page, page_size, total_items)
+    )
 
 @router.delete("/watchlist/{movie_id}", status_code=status.HTTP_200_OK)
 def remove_from_watchlist(
