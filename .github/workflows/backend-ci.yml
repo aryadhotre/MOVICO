@@ -32,10 +32,23 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      - name: Inspect Workspace Directory Structure
+        run: |
+          echo "=== Current working directory ==="
+          pwd
+          echo "=== Root directory contents ==="
+          ls -la
+          echo "=== Directory tree (recursive) ==="
+          find . -maxdepth 3 -not -path '*/.*'
+
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements.txt ]; then 
+            pip install -r requirements.txt
+          elif [ -f Movie-Recommendation-System-MOVICO-main/MOVICO/requirements.txt ]; then
+            pip install -r Movie-Recommendation-System-MOVICO-main/MOVICO/requirements.txt
+          fi
 
       - name: Run Tests with Pytest
         env:
@@ -44,4 +57,13 @@ jobs:
           REDIS_PORT: 6379
           USE_SQLITE: "true"
         run: |
-          python -m pytest -v
+          # Try running pytest in root, if it fails because of no tests, try the subfolder
+          if [ -f pytest.ini ]; then
+            python -m pytest -v
+          elif [ -d Movie-Recommendation-System-MOVICO-main/MOVICO ]; then
+            cd Movie-Recommendation-System-MOVICO-main/MOVICO
+            python -m pytest -v
+          else
+            echo "No pytest.ini found and no nested MOVICO folder found."
+            exit 4
+          fi
