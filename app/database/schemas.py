@@ -101,6 +101,17 @@ class PaginatedWatchlistResponse(BaseModel):
     items: List["WatchlistResponse"]
     pagination: PaginationMeta
 
+# Genre Schemas
+class GenreResponse(BaseModel):
+    """A single genre with its movie count."""
+    name: str = Field(..., description="Genre name (e.g., 'Action', 'Comedy')")
+    movie_count: int = Field(..., description="Number of movies in this genre")
+
+class GenreListResponse(BaseModel):
+    """Complete list of all genres available in the catalog."""
+    genres: List[GenreResponse]
+    total_genres: int = Field(..., description="Total number of unique genres")
+
 # Rating Schemas
 class RatingBase(BaseModel):
     movie_id: int

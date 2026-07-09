@@ -189,9 +189,13 @@ docker-compose up --build
 ### Movies (`/api/movies`)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/movies/search?q={query}` | Search movies (returns TMDB metadata) |
+| GET | `/api/movies/genres` | Get all genres with movie counts (for filter dropdowns) |
+| GET | `/api/movies/browse` | Browse catalog with pagination, sorting, and genre/year/language filters |
+| GET | `/api/movies/search?q={query}` | Search movies by title with optional genre filter |
 | GET | `/api/movies/{id}` | Get single movie with full metadata |
 | GET | `/api/movies/{id}/similar` | Get similar movies (content/collaborative) |
+
+**Browse filter parameters:** `genre`, `genres` (comma-separated AND), `language`, `year`, `sort_by`, `order`, `page`, `page_size`
 
 ### Recommendations (`/api/recommendations`)
 | Method | Endpoint | Description |

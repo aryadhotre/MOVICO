@@ -178,3 +178,88 @@ def test_database_stats(client: TestClient):
     assert "tmdb_pending_movies" in data
     assert data["total_movies"] == 5
     assert data["total_ratings"] == 3
+
+
+# ========== Genre Filtering Tests ==========
+
+def test_get_genres(client: TestClient):
+    """Verifies the genre catalog endpoint returns all unique genres with counts."""
+    response = client.get("/api/movies/genres")
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert "genres" in data
+    assert "total_genres" in data
+    assert data["total_genres"] > 0
+    
+    # Each genre should have name and movie_count
+    for genre in data["genres"]:
+        assert "name" in genre
+        assert "movie_count" in genre
+        assert genre["movie_count"] > 0
+    
+    # Check known genres from our test fixtures exist
+    genre_names = [g["name"] for g in data["genres"]]
+    assert "Comedy" in genre_names
+    assert "Adventure" in genre_names
+    assert "Fantasy" in genre_names
+
+def test_browse_with_single_genre_filter(client: TestClient):
+    """Verifies browse endpoint filters correctly by a single genre."""
+    # Filter by Comedy — test movies 1,3,4,5 have Comedy
+    response = client.get("/api/movies/browse?page=1&page_size=20&genre=Comedy")
+    assert response.status_code == 200
+    data = response.json()
+    
+    # All returned movies should contain "Comedy" in their genres
+    for movie in data["items"]:
+        assert "Comedy" in movie["genres"], f"Movie '{movie['title']}' does not have Comedy genre"
+    
+    # We have 4 movies with Comedy in test data
+    assert data["pagination"]["total_items"] == 4
+
+def test_browse_with_multi_genre_filter(client: TestClient):
+    """Verifies multi-genre AND filter returns only movies matching ALL specified genres."""
+    # Filter by Adventure AND Fantasy — only Toy Story and Jumanji match both
+    response = client.get("/api/movies/browse?page=1&page_size=20&genres=Adventure,Fantasy")
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert data["pagination"]["total_items"] == 2
+    for movie in data["items"]:
+        assert "Adventure" in movie["genres"]
+        assert "Fantasy" in movie["genres"]
+
+def test_search_with_genre_filter(client: TestClient):
+    """Verifies search + genre filter combination works correctly."""
+    # Search for movies with "(1995)" in title, filtered to Adventure genre
+    response = client.get("/api/movies/search?q=1995&genre=Adventure&page=1&page_size=20")
+    assert response.status_code == 200
+    data = response.json()
+    
+    # Only Toy Story and Jumanji have Adventure genre
+    for movie in data["items"]:
+        assert "Adventure" in movie["genres"]
+        assert "1995" in movie["title"]
+
+def test_browse_genre_no_results(client: TestClient):
+    """Verifies graceful handling when genre filter matches zero movies."""
+    response = client.get("/api/movies/browse?page=1&page_size=20&genre=Western")
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert data["pagination"]["total_items"] == 0
+    assert len(data["items"]) == 0
+    assert data["pagination"]["total_pages"] == 1
+    assert data["pagination"]["has_next"] is False
+
+def test_browse_with_year_filter(client: TestClient):
+    """Verifies year filter works on the title-embedded year."""
+    response = client.get("/api/movies/browse?page=1&page_size=20&year=1995")
+    assert response.status_code == 200
+    data = response.json()
+    
+    # All 5 test movies are from 1995
+    assert data["pagination"]["total_items"] == 5
+    for movie in data["items"]:
+        assert "(1995)" in movie["title"]

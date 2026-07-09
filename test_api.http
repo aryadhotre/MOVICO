@@ -28,37 +28,48 @@ username=developer&password=strongpassword123
 GET {{baseUrl}}/auth/me
 Authorization: Bearer {{login.response.body.access_token}}
 
-### ========== BROWSE & SEARCH (PAGINATED) ==========
+### ========== GENRE CATALOG ==========
 
-### 6. Browse All Movies (Page 1, sorted by popularity)
+### 6. Get All Available Genres (with movie counts)
+GET {{baseUrl}}/movies/genres
+
+### ========== BROWSE & SEARCH (PAGINATED + FILTERED) ==========
+
+### 7. Browse All Movies (Page 1, sorted by popularity)
 GET {{baseUrl}}/movies/browse?page=1&page_size=10&sort_by=popularity&order=desc
 
-### 7. Browse Page 2
-GET {{baseUrl}}/movies/browse?page=2&page_size=10&sort_by=popularity&order=desc
+### 8. Browse Action Movies Only
+GET {{baseUrl}}/movies/browse?page=1&page_size=10&genre=Action
 
-### 8. Browse Movies sorted by TMDB rating
-GET {{baseUrl}}/movies/browse?page=1&page_size=10&sort_by=vote_average&order=desc
+### 9. Browse Movies that are BOTH Action AND Sci-Fi
+GET {{baseUrl}}/movies/browse?page=1&page_size=10&genres=Action,Sci-Fi
 
-### 9. Browse Movies sorted alphabetically
-GET {{baseUrl}}/movies/browse?page=1&page_size=20&sort_by=title&order=asc
+### 10. Browse Comedy Movies from 2010
+GET {{baseUrl}}/movies/browse?page=1&page_size=10&genre=Comedy&year=2010
 
-### 10. Search Movies (Paginated)
+### 11. Browse French Movies sorted by TMDB rating
+GET {{baseUrl}}/movies/browse?page=1&page_size=10&language=fr&sort_by=vote_average&order=desc
+
+### 12. Browse Animation Movies sorted alphabetically
+GET {{baseUrl}}/movies/browse?page=1&page_size=20&genre=Animation&sort_by=title&order=asc
+
+### 13. Search Movies (Paginated)
 GET {{baseUrl}}/movies/search?q=Toy Story&page=1&page_size=10
 
-### 11. Search with more results
-GET {{baseUrl}}/movies/search?q=Batman&page=1&page_size=5
+### 14. Search within a specific genre
+GET {{baseUrl}}/movies/search?q=Star&genre=Sci-Fi&page=1&page_size=10
 
-### 12. Search Page 2
-GET {{baseUrl}}/movies/search?q=Batman&page=2&page_size=5
+### 15. Search with multiple genre filter
+GET {{baseUrl}}/movies/search?q=Dark&genres=Action,Thriller&page=1&page_size=10
 
 ### ========== SINGLE MOVIE ==========
 
-### 13. Get Single Movie Details
+### 16. Get Single Movie Details
 GET {{baseUrl}}/movies/1
 
 ### ========== RATINGS ==========
 
-### 14. Submit Movie Rating
+### 17. Submit Movie Rating
 POST {{baseUrl}}/ratings/
 Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: application/json
@@ -68,7 +79,7 @@ Content-Type: application/json
   "rating": 5.0
 }
 
-### 15. Rate another movie
+### 18. Rate another movie
 POST {{baseUrl}}/ratings/
 Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: application/json
@@ -78,7 +89,7 @@ Content-Type: application/json
   "rating": 4.5
 }
 
-### 16. Rate another movie
+### 19. Rate another movie
 POST {{baseUrl}}/ratings/
 Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: application/json
@@ -88,31 +99,31 @@ Content-Type: application/json
   "rating": 5.0
 }
 
-### 17. Get Rating History (Paginated)
+### 20. Get Rating History (Paginated)
 GET {{baseUrl}}/ratings/history?page=1&page_size=10
 Authorization: Bearer {{login.response.body.access_token}}
 
 ### ========== RECOMMENDATIONS ==========
 
-### 18. Get Personalized Hybrid Recommendations (with TMDB poster URLs, cast, overview)
+### 21. Get Personalized Hybrid Recommendations
 GET {{baseUrl}}/recommendations/
 Authorization: Bearer {{login.response.body.access_token}}
 
 ### ========== SIMILAR MOVIES ==========
 
-### 19. Get Similar Movies (Content-Based — uses 8-channel TF-IDF)
+### 22. Get Similar Movies (Content-Based — uses 8-channel TF-IDF)
 GET {{baseUrl}}/movies/1/similar?method=content&limit=5
 
-### 20. Get Similar Movies (Collaborative — uses SVD latent space)
+### 23. Get Similar Movies (Collaborative — uses SVD latent space)
 GET {{baseUrl}}/movies/1/similar?method=collaborative&limit=5
 
 ### ========== SYSTEM ADMIN ==========
 
-### 21. Get System Metrics (RMSE, NDCG, Coverage, etc.)
+### 24. Get System Metrics (RMSE, NDCG, Coverage, etc.)
 GET {{baseUrl}}/system/metrics
 
-### 22. Trigger TMDB Enrichment (requires TMDB_API_KEY in .env)
+### 25. Trigger TMDB Enrichment (requires TMDB_API_KEY in .env)
 POST {{baseUrl}}/system/enrich
 
-### 23. Trigger Model Retraining
+### 26. Trigger Model Retraining
 POST {{baseUrl}}/system/train
