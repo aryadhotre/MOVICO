@@ -25,6 +25,7 @@ class Movie(Base):
     imdb_id = Column(String(20), nullable=True)
     tmdb_id = Column(String(20), nullable=True)
     popularity_score = Column(Float, default=0.0)
+    trending_score = Column(Float, default=0.0)
 
     # TMDB enrichment metadata
     poster_path = Column(String(255), nullable=True)

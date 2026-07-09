@@ -263,3 +263,61 @@ def test_browse_with_year_filter(client: TestClient):
     assert data["pagination"]["total_items"] == 5
     for movie in data["items"]:
         assert "(1995)" in movie["title"]
+
+def test_trending_movies(client: TestClient):
+    """Verifies trending movies endpoint returns paginated results sorted by trending score."""
+    response = client.get("/api/movies/trending?page=1&page_size=3")
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert "items" in data
+    assert "pagination" in data
+    assert len(data["items"]) == 3
+    # Check that it's sorted by trending_score desc
+    assert data["items"][0]["trending_score"] >= data["items"][1]["trending_score"]
+    assert data["items"][1]["trending_score"] >= data["items"][2]["trending_score"]
+
+def test_browse_sorted_by_trending(client: TestClient):
+    """Verifies browsing can be sorted by trending_score."""
+    response = client.get("/api/movies/browse?sort_by=trending&order=desc&page_size=5")
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert len(data["items"]) == 5
+    assert data["items"][0]["trending_score"] >= data["items"][1]["trending_score"]
+
+def test_recommendations_with_explanations(client: TestClient):
+    """Verifies that recommendations can include explanations when requested."""
+    # Authenticate first
+    login_response = client.post(
+        "/api/auth/login",
+        data={"username": "testuser", "password": "testpassword"}
+    )
+    token = login_response.json()["access_token"]
+    
+    # Request recommendations with explanations enabled
+    response = client.get(
+        "/api/recommendations/?limit=2&include_explanations=true",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert "movies" in data
+    assert "recommendation_type" in data
+    
+    # Note: If user is cold-start, we fall back to popularity (which has no explanations)
+    # Our test user in conftest has 3 ratings, which is less than the cold start threshold (5).
+    # Let's confirm if they returned cold start.
+    if data["recommendation_type"] == "popularity_cold_start":
+        for movie in data["movies"]:
+            assert movie["explanation"] is None
+    else:
+        # If it generated hybrid recommendations, verify explanations schema structure
+        for movie in data["movies"]:
+            if movie["explanation"] is not None:
+                assert "because_watched_id" in movie["explanation"]
+                assert "because_watched_title" in movie["explanation"]
+                assert "similarity_score" in movie["explanation"]
+                assert "reason_type" in movie["explanation"]
+

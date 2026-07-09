@@ -61,7 +61,7 @@ def db():
         Movie(
             id=1, title="Toy Story (1995)", 
             genres="Adventure|Animation|Children|Comedy|Fantasy", 
-            popularity_score=4.5, tmdb_id="862",
+            popularity_score=4.5, trending_score=4.0, tmdb_id="862",
             poster_path="/uXDfjJbdP4ijSERjOH7ROa6o.jpg",
             overview="Woody, a traditional pull-string cowboy doll, is Andy's favorite toy.",
             director="John Lasseter", cast_list="Tom Hanks, Tim Allen, Don Rickles",
@@ -71,7 +71,7 @@ def db():
         Movie(
             id=2, title="Jumanji (1995)", 
             genres="Adventure|Children|Fantasy", 
-            popularity_score=3.0, tmdb_id="8844",
+            popularity_score=3.0, trending_score=2.8, tmdb_id="8844",
             poster_path="/vgpXmVaVyUL7GGiDeiK1mKEKb2X.jpg",
             overview="When siblings Judy and Peter discover an enchanted board game...",
             director="Joe Johnston", cast_list="Robin Williams, Kirsten Dunst",
@@ -80,17 +80,17 @@ def db():
         Movie(
             id=3, title="Grumpier Old Men (1995)", 
             genres="Comedy|Romance", 
-            popularity_score=2.0, tmdb_id="15602"
+            popularity_score=2.0, trending_score=3.5, tmdb_id="15602"
         ),
         Movie(
             id=4, title="Waiting to Exhale (1995)", 
             genres="Comedy|Drama|Romance", 
-            popularity_score=1.5, tmdb_id="31357"
+            popularity_score=1.5, trending_score=1.2, tmdb_id="31357"
         ),
         Movie(
             id=5, title="Father of the Bride Part II (1995)", 
             genres="Comedy", 
-            popularity_score=1.0, tmdb_id="11862"
+            popularity_score=1.0, trending_score=0.9, tmdb_id="11862"
         ),
     ]
     session.add_all(test_movies)

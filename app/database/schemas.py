@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 from typing import List, Optional, Generic, TypeVar
 from datetime import datetime
 import math
@@ -39,9 +39,11 @@ class MovieBase(BaseModel):
 
 class MovieCreate(MovieBase):
     popularity_score: Optional[float] = 0.0
+    trending_score: Optional[float] = 0.0
 
 class MovieResponse(MovieBase):
     popularity_score: float
+    trending_score: float
 
     # TMDB enrichment fields
     poster_path: Optional[str] = None
@@ -65,16 +67,15 @@ class MovieResponse(MovieBase):
     class Config:
         from_attributes = True
 
-    @classmethod
-    def from_orm(cls, obj):
-        """Override from_orm to compute full poster/backdrop URLs from TMDB paths."""
+    @model_validator(mode="after")
+    def compute_image_urls(self) -> "MovieResponse":
+        """Computes full poster/backdrop URLs from TMDB paths after validation."""
         TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p"
-        instance = super().from_orm(obj)
-        if instance.poster_path:
-            instance.poster_url = f"{TMDB_IMAGE_BASE}/w500{instance.poster_path}"
-        if instance.backdrop_path:
-            instance.backdrop_url = f"{TMDB_IMAGE_BASE}/original{instance.backdrop_path}"
-        return instance
+        if self.poster_path:
+            self.poster_url = f"{TMDB_IMAGE_BASE}/w500{self.poster_path}"
+        if self.backdrop_path:
+            self.backdrop_url = f"{TMDB_IMAGE_BASE}/original{self.backdrop_path}"
+        return self
 
 # Pagination Schema
 class PaginationMeta(BaseModel):
@@ -143,9 +144,18 @@ class WatchlistResponse(BaseModel):
         from_attributes = True
 
 # Recommendation Schemas
+class RecommendationExplanation(BaseModel):
+    because_watched_id: int
+    because_watched_title: str
+    similarity_score: float
+    reason_type: str  # e.g., "content" or "collaborative"
+
+class RecommendedMovieResponse(MovieResponse):
+    explanation: Optional[RecommendationExplanation] = None
+
 class RecommendationResponse(BaseModel):
     recommendation_type: str
-    movies: List[MovieResponse]
+    movies: List[RecommendedMovieResponse]
     generated_at: datetime
     execution_time_seconds: float
 

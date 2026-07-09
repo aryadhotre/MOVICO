@@ -13,6 +13,7 @@ coordinator = RecommenderCoordinator()
 async def get_recommendations(
     limit: int = Query(10, ge=1, le=50, description="Number of recommendations to fetch"),
     bypass_cache: bool = Query(False, description="Bypass Redis cache and recalculate recommendations"),
+    include_explanations: bool = Query(True, description="Include explanations ('Because you watched X') in recommendations"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -22,7 +23,8 @@ async def get_recommendations(
             user_id=current_user.id,
             limit=limit,
             db=db,
-            bypass_cache=bypass_cache
+            bypass_cache=bypass_cache,
+            include_explanations=include_explanations
         )
         return response
     except Exception as e:

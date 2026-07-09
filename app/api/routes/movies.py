@@ -90,11 +90,33 @@ def get_genres(
     return _build_genre_cache(db)
 
 
+@router.get("/trending", response_model=PaginatedMovieResponse)
+def get_trending_movies(
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    genre: Optional[str] = Query(None, description="Filter trending movies by genre"),
+    db: Session = Depends(get_db)
+):
+    """Retrieves trending movies based on time-decayed popularity where recent ratings decay less."""
+    base_query = db.query(Movie)
+    if genre:
+        base_query = base_query.filter(Movie.genres.contains(genre))
+    
+    total_items = base_query.count()
+    offset = (page - 1) * page_size
+    results = base_query.order_by(Movie.trending_score.desc()).offset(offset).limit(page_size).all()
+    
+    return PaginatedMovieResponse(
+        items=results,
+        pagination=build_pagination_meta(page, page_size, total_items)
+    )
+
+
 @router.get("/browse", response_model=PaginatedMovieResponse)
 def browse_movies(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    sort_by: str = Query("popularity", regex="^(popularity|title|vote_average|release_date)$", description="Sort field"),
+    sort_by: str = Query("popularity", regex="^(popularity|trending|title|vote_average|release_date)$", description="Sort field"),
     order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
     genre: Optional[str] = Query(None, description="Filter by a single genre (e.g., 'Action')"),
     genres: Optional[str] = Query(None, description="Filter by multiple genres, comma-separated AND logic (e.g., 'Action,Sci-Fi')"),
@@ -104,19 +126,13 @@ def browse_movies(
 ):
     """Browse the full movie catalog with pagination, sorting, and filtering.
     
-    **Sort options:** popularity, title, vote_average, release_date  
+    **Sort options:** popularity, trending, title, vote_average, release_date  
     **Filter options:** genre, genres (multi), language, year  
-    
-    Examples:
-    - Browse Action movies: `?genre=Action`
-    - Browse Action + Sci-Fi movies: `?genres=Action,Sci-Fi`
-    - Browse French movies: `?language=fr`
-    - Browse 1990s movies: `?year=1995`
-    - Combine filters: `?genre=Comedy&year=2010&sort_by=vote_average&order=desc`
     """
     # Map sort_by to column
     sort_column_map = {
         "popularity": Movie.popularity_score,
+        "trending": Movie.trending_score,
         "title": Movie.title,
         "vote_average": Movie.vote_average,
         "release_date": Movie.release_date,

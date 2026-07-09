@@ -24,7 +24,78 @@ class HybridRecommender(BaseRecommender):
         """Not called directly; SVD and Content models are trained via their respective routines."""
         pass
 
-    def recommend(self, user_id: int, top_n: int = 10, db: Session = None, **kwargs) -> List[Dict[str, Any]]:
+    def _generate_explanations(self, user_id: int, rec_movie_ids: List[int], db: Session) -> Dict[int, Dict[str, Any]]:
+        """Generates content-similarity-based explanations for recommendations.
+        
+        For each recommended movie, finds the movie that the user rated highly (>= 4.0)
+        which is most similar to it in the TF-IDF space.
+        """
+        explanations = {}
+        if not self.content_model.movie_to_idx or self.content_model.tfidf_matrix is None:
+            try:
+                self.content_model.load()
+            except Exception:
+                return explanations
+
+        # Get user's high-rated movies
+        high_ratings = db.query(Rating).filter(
+            Rating.user_id == user_id,
+            Rating.rating >= 4.0
+        ).all()
+        
+        if not high_ratings:
+            # Fallback to rating >= 3.0 if no 4.0+ ratings
+            high_ratings = db.query(Rating).filter(
+                Rating.user_id == user_id,
+                Rating.rating >= 3.0
+            ).all()
+
+        if not high_ratings:
+            return explanations
+
+        watched_movie_ids = [r.movie_id for r in high_ratings]
+        
+        # Filter to those available in tfidf mappings
+        valid_watched_ids = [mid for mid in watched_movie_ids if mid in self.content_model.movie_to_idx]
+        valid_rec_ids = [mid for mid in rec_movie_ids if mid in self.content_model.movie_to_idx]
+        
+        if not valid_watched_ids or not valid_rec_ids:
+            return explanations
+
+        # Fetch watched movie titles in one query
+        from sklearn.metrics.pairwise import cosine_similarity
+        watched_movies_map = {
+            m.id: m.title for m in db.query(Movie.id, Movie.title).filter(Movie.id.in_(valid_watched_ids)).all()
+        }
+
+        # Build vectors
+        watched_indices = [self.content_model.movie_to_idx[mid] for mid in valid_watched_ids]
+        rec_indices = [self.content_model.movie_to_idx[mid] for mid in valid_rec_ids]
+
+        # Extract rows from tfidf_matrix
+        watched_vecs = self.content_model.tfidf_matrix[watched_indices]
+        rec_vecs = self.content_model.tfidf_matrix[rec_indices]
+
+        # Compute similarity matrix
+        sim_matrix = cosine_similarity(rec_vecs, watched_vecs)
+
+        # For each recommended movie, find the index of the most similar watched movie
+        for i, rec_id in enumerate(valid_rec_ids):
+            best_idx = int(np.argmax(sim_matrix[i]))
+            best_score = float(sim_matrix[i, best_idx])
+            
+            if best_score > 0.05:  # Require a minimum similarity threshold to explain
+                watched_id = valid_watched_ids[best_idx]
+                explanations[rec_id] = {
+                    "because_watched_id": watched_id,
+                    "because_watched_title": watched_movies_map.get(watched_id, "a movie you rated"),
+                    "similarity_score": round(best_score, 3),
+                    "reason_type": "content"
+                }
+
+        return explanations
+
+    def recommend(self, user_id: int, top_n: int = 10, db: Session = None, include_explanations: bool = True, **kwargs) -> List[Dict[str, Any]]:
         """Intelligently integrates SVD collaborative filtering, content-based similarities, and popularity fallbacks."""
         if db is None:
             raise ValueError("Database session (db) is required for HybridRecommender.")
@@ -35,7 +106,9 @@ class HybridRecommender(BaseRecommender):
         
         if user_ratings_count < self.cold_start_threshold:
             logger.info(f"User {user_id} has {user_ratings_count} ratings (< threshold {self.cold_start_threshold}). Triggering Cold-Start Popularity fallback.")
-            return self.popularity_model.recommend(user_id, top_n, db)
+            recs = self.popularity_model.recommend(user_id, top_n, db)
+            # Popularity fallback doesn't have explanations
+            return recs
 
         # 2. Try loading SVD and Content models if not already loaded in memory
         try:
@@ -56,14 +129,11 @@ class HybridRecommender(BaseRecommender):
         watched_movie_ids = {r.movie_id for r in user_ratings}
 
         # 4. Generate Content-based Similarities
-        # Get content similarities (returns list of movie info containing 'score')
         content_recs = self.content_model.recommend(user_id, top_n=100, db=db)
         content_scores = {rec["movie_id"]: rec["score"] for rec in content_recs}
 
         # 5. Hybrid Scoring Loop
         hybrid_candidates = []
-        
-        # We iterate over all movies in our SVD vocabulary
         for movie_id, i_idx in self.collab_model.movie_to_idx.items():
             if movie_id in watched_movie_ids:
                 continue
@@ -90,7 +160,11 @@ class HybridRecommender(BaseRecommender):
         hybrid_candidates.sort(key=lambda x: x["score"], reverse=True)
         top_candidates = hybrid_candidates[:top_n]
 
-        # 6. Populate final movie metadata
+        # 6. Populate explanations if requested
+        rec_ids = [item["movie_id"] for item in top_candidates]
+        explanations = self._generate_explanations(user_id, rec_ids, db) if include_explanations else {}
+
+        # 7. Populate final movie metadata
         recommendations = []
         for rank, item in enumerate(top_candidates):
             movie = db.query(Movie).filter(Movie.id == item["movie_id"]).first()
@@ -101,6 +175,7 @@ class HybridRecommender(BaseRecommender):
                     "rank": rank + 1,
                     "title": movie.title,
                     "genres": movie.genres,
+                    "explanation": explanations.get(movie.id),
                     "metadata": {
                         "collab_rating_prediction": round(item["collab_rating"], 2),
                         "content_similarity": round(item["content_score"], 3)

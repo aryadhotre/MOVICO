@@ -150,6 +150,29 @@ class DataPipeline:
         movies_df = pd.merge(movies_df, agg_stats["popularity_score"], left_on="movieId", right_index=True, how="left")
         movies_df["popularity_score"] = movies_df["popularity_score"].fillna(0.0)
 
+        # Calculate time-weighted trending score (recent ratings decay less)
+        logger.info("Computing trending scores (time-decayed popularity)...")
+        max_time = ratings_df["timestamp"].max()
+        # Difference in years (using 365.25 days per year)
+        ratings_df["delta_years"] = (max_time - ratings_df["timestamp"]) / (365.25 * 24 * 3600)
+        # Half-life of 1 year: weight = 2^(-delta_years)
+        ratings_df["weight"] = 2.0 ** (-ratings_df["delta_years"])
+        ratings_df["weighted_rating"] = ratings_df["rating"] * ratings_df["weight"]
+        
+        agg_trending = ratings_df.groupby("movieId").agg(
+            sum_weight=("weight", "sum"),
+            sum_weighted_rating=("weighted_rating", "sum")
+        )
+        agg_trending["weighted_mean"] = agg_trending["sum_weighted_rating"] / agg_trending["sum_weight"]
+        agg_trending["trending_score"] = agg_trending["weighted_mean"] * np.log1p(agg_trending["sum_weight"])
+        agg_trending["trending_score"] = agg_trending["trending_score"].fillna(0.0)
+        
+        movies_df = pd.merge(movies_df, agg_trending["trending_score"], left_on="movieId", right_index=True, how="left")
+        movies_df["trending_score"] = movies_df["trending_score"].fillna(0.0)
+
+        # Clean up temporary columns to save memory
+        ratings_df.drop(columns=["delta_years", "weight", "weighted_rating"], inplace=True)
+
         return movies_df, ratings_df
 
     def seed_database(self, movies_df: pd.DataFrame, ratings_df: pd.DataFrame, db: Session):
@@ -167,6 +190,7 @@ class DataPipeline:
                     "imdb_id": str(row["imdbId"]) if pd.notna(row["imdbId"]) else None,
                     "tmdb_id": str(row["tmdbId"]) if pd.notna(row["tmdbId"]) else None,
                     "popularity_score": float(row["popularity_score"]),
+                    "trending_score": float(row["trending_score"]),
                     "user_tags": str(row["user_tags"]) if pd.notna(row.get("user_tags")) else None
                 })
             

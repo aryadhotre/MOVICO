@@ -2,26 +2,24 @@
 
 MOVICO is a high-performance, production-quality movie recommendation service built with **FastAPI**, **SQLAlchemy**, **Redis**, and **scikit-learn / SciPy**.
 
-It uses the **MovieLens Latest (33M+ ratings, 86K+ movies)** dataset — the largest publicly available movie ratings dataset — and enriches movies with **TMDB metadata** (posters, plots, cast, directors, trailers) to enable frontend developers to build stunning, Netflix-quality interfaces with a single API call.
+It is engineered to run on the **MovieLens Latest (33M+ ratings, 86K+ movies)** dataset — the largest publicly available movie ratings dataset — and dynamically enriches movies with **TMDB metadata** (posters, plots, cast, directors, trailers) to enable frontend developers to build stunning, Netflix-quality interfaces with a single API call.
 
 ---
 
-## Key Features
+## 🚀 Key Features
 
-- **Hybrid Recommendation Engine**: Combines Matrix Factorization (Funk SVD), Rich Multi-Signal Content-Based TF-IDF, and Popularity Fallback
-- **8-Channel Content Features**: Genres, titles, plots, directors, cast, user-generated tags, release era, and language — far beyond genre-only matching
-- **TMDB Metadata Enrichment**: Automatic batch enrichment of 86K+ movies with posters, plots, cast, directors, and release dates
-- **Frontend-Ready API**: Every movie response includes full `poster_url`, `backdrop_url`, `overview`, `cast_list`, `director` — zero extra work for frontend developers
-- **Large-Scale Training**: Handles 33M+ ratings via intelligent sampling and configurable SVD hyperparameters
-- **Cold-Start Handling**: Popularity-based recommendations for new users with zero history
-- **Redis Caching**: Sub-millisecond recommendation retrieval with soft fallback when Redis is offline
-- **JWT Authentication**: Secure user registration, login, and per-user recommendation histories
-- **Comprehensive Evaluation**: RMSE, MAE, Precision@K, NDCG, Catalog Coverage, Diversity, Novelty metrics
-- **Docker-Ready**: Multi-container orchestration with PostgreSQL + Redis, or local SQLite mode
+*   **Hybrid Recommendation Engine**: Combines Funk SVD Matrix Factorization (Collaborative Filtering) with multi-signal TF-IDF representation (Content-Based) and a time-decayed Popularity baseline.
+*   **Explainable Recommendations**: Offers optional "Because you watched **X**" explanations using real-time TF-IDF cosine similarity against the user's high-rated history.
+*   **Time-Decayed Trending Engine**: Dynamically calculates trending scores by applying exponential decay weights to recent user ratings.
+*   **8-Channel Content Features**: Combines genres (3x weight), title, overview, director (2x weight), cast, user-generated tags, release decade, and language for hyper-accurate content recommendations.
+*   **TMDB Metadata Enrichment**: Automated batch enrichment of 86K+ movies with poster URLs, backdrop URLs, cast lists, directors, and runtimes.
+*   **Pagination & Sorting**: Browse and search endpoints are fully paginated with sorting options (`popularity`, `trending`, `title`, `vote_average`, `release_date`).
+*   **Redis Caching**: Sub-millisecond recommendation retrieval with soft fallback when Redis is offline.
+*   **Docker-Ready**: Multi-container orchestration with PostgreSQL + Redis, or local SQLite mode.
 
 ---
 
-## Architecture Overview
+## 📐 Architecture Overview
 
 ```mermaid
 graph TD
@@ -31,9 +29,10 @@ graph TD
     B -->|Orchestrate Recommendations| E[Recommender Coordinator]
     
     E -->|Cache Miss| F[Hybrid Recommendation Engine]
-    F -->|Collaborative Filtering| G[SVD Model - 50 factors]
+    F -->|Collaborative Filtering| G[Funk SVD Model]
     F -->|Content Filtering| H[TF-IDF Movie Similarity]
-    F -->|Cold-Start Fallback| I[Popularity Model]
+    F -->|Explainability Engine| X["Explainers (TF-IDF Cosine Similarity)"]
+    F -->|Cold-Start Fallback| I[Popularity & Trending Models]
     
     J[Pipeline Manager] -->|Ingest & Clean| K[MovieLens Latest - 33M ratings]
     J -->|Enrich Metadata| L[TMDB API - Posters, Cast, Plots]
@@ -42,142 +41,29 @@ graph TD
     J -->|Bulk Seed| D
 ```
 
-### How Recommendations Work
+---
 
-1. **New User (Cold Start)**: If a user has fewer than 5 ratings, the system recommends globally popular movies using: `mean_rating × log(vote_count)`
+## 🧠 Algorithmic Detail
 
-2. **Active User (Hybrid)**: For users with 5+ ratings, the engine blends two models:
-   - **Collaborative Filtering (70% weight)**: Funk SVD Matrix Factorization trained via SGD learns latent user preferences from 33M+ rating patterns across 50 latent factors
-   - **Content-Based (30% weight)**: Rich multi-signal TF-IDF computes cosine similarity using **8 feature channels**:
-     1. **Genres** (3x weighted) — Adventure, Animation, Comedy, etc.
-     2. **Title keywords** — movie name tokens
-     3. **Overview/plot** — full TMDB description (when enriched)
-     4. **Director** (2x weighted) — "you liked Nolan's other films"
-     5. **Cast** — actor name matching
-     6. **User-generated tags** — crowdsourced labels like "mind-bending", "twist ending"
-     7. **Release decade** — era-based taste preferences
-     8. **Original language** — for non-English cinema preferences
+### 1. Hybrid Score Blending
+For users with 5+ ratings, recommendations are scored using a linear combination:
+$$\text{Score} = w_{\text{collab}} \times \text{Prediction}_{\text{SVD\_norm}} + w_{\text{content}} \times \text{Similarity}_{\text{TF-IDF}}$$
+Where $w_{\text{collab}} = 0.7$, $w_{\text{content}} = 0.3$, and predicted collaborative ratings are normalized from $[0.5, 5.0]$ to $[0, 1]$.
 
-3. **Result**: Already-watched movies are filtered out, and the top-K highest scoring candidates are returned with full TMDB metadata
+### 2. Time-Decayed Trending Score
+Unlike static popularity, the trending score downweights older reviews using exponential half-life decay:
+$$\text{Weight}(t) = 2^{-\frac{T_{\text{max}} - t}{\text{Half-Life}}}$$
+$$\text{Trending Score} = \text{Weighted Mean Rating} \times \log(1 + \sum \text{Weight})$$
+Where $T_{\text{max}}$ is the latest rating timestamp in the database and the half-life is set to **1 year**.
+
+### 3. Explainability Engine ("Because you watched X")
+To demystify recommendations, the system scans the user's high-rated movies ($R \ge 4.0$) and computes pairwise cosine similarity against the recommended candidates:
+$$\text{Similarity}(A, B) = \cos(\theta) = \frac{\mathbf{v}_A \cdot \mathbf{v}_B}{\|\mathbf{v}_A\| \|\mathbf{v}_B\|}$$
+The highest-scoring similarity match above $0.05$ is returned as the explanation payload.
 
 ---
 
-## What the Frontend Developer Gets
-
-A single API call (`GET /api/recommendations/`) returns everything needed to render a movie card:
-
-```json
-{
-  "recommendation_type": "hybrid",
-  "movies": [
-    {
-      "id": 356,
-      "title": "Forrest Gump (1994)",
-      "genres": "Comedy|Drama|Romance|War",
-      "popularity_score": 18.42,
-      "poster_url": "https://image.tmdb.org/t/p/w500/arw2vcBvEbcFQ8NZRQ.jpg",
-      "backdrop_url": "https://image.tmdb.org/t/p/original/3h1JZGDhZ8nz.jpg",
-      "overview": "A man with a low IQ has accomplished great things in his life...",
-      "director": "Robert Zemeckis",
-      "cast_list": "Tom Hanks, Robin Wright, Gary Sinise, Sally Field",
-      "release_date": "1994-07-06",
-      "vote_average": 8.5,
-      "runtime": 142
-    }
-  ],
-  "execution_time_seconds": 0.0342
-}
-```
-
----
-
-## Directory Structure
-
-```text
-├── app/
-│   ├── api/
-│   │   ├── routes/          # API endpoints (auth, movies, ratings, recommendations, system)
-│   │   ├── auth_helper.py   # JWT & Password utility functions
-│   │   └── middleware.py    # Request logger and exception handlers
-│   ├── config/
-│   │   └── settings.py      # App configurations (Pydantic settings)
-│   ├── database/
-│   │   ├── connection.py    # Database session setup (SQLite/PostgreSQL)
-│   │   ├── models.py        # SQLAlchemy relational schemas with TMDB metadata columns
-│   │   └── schemas.py       # Pydantic schemas with poster_url/backdrop_url computation
-│   ├── models/
-│   │   ├── base.py          # Abstract base class for recommenders
-│   │   ├── collaborative.py # Funk SVD Matrix Factorization (50 latent factors)
-│   │   ├── content_based.py # Rich 8-channel TF-IDF Content Similarities
-│   │   ├── popularity.py    # Vote-weighted popularity baseline
-│   │   ├── hybrid.py        # Combined prediction scorer (70% SVD + 30% content)
-│   │   ├── evaluator.py     # RMSE, MAE, Precision@K, NDCG, Diversity, Novelty
-│   │   └── trainer.py       # Training with intelligent sampling for 33M+ datasets
-│   ├── pipeline/
-│   │   ├── ingest.py        # MovieLens downloader & database seeder
-│   │   ├── preprocess.py    # Rich multi-signal feature engineering & sparse matrix builders
-│   │   └── tmdb_enricher.py # TMDB API batch enrichment pipeline
-│   └── services/
-│       ├── cache.py         # Redis client for caching
-│       └── recommender.py   # Recommendation coordinator and history logger
-│   └── main.py              # Application entrypoint & startup triggers
-├── tests/                   # Automated pytest suite
-├── Dockerfile               # Build configuration for container image
-├── docker-compose.yml       # Multi-container manager (FastAPI + Postgres + Redis)
-├── test_api.http            # VS Code REST Client test file
-├── requirements.txt         # Core dependencies
-└── pytest.ini               # Test configurations
-```
-
----
-
-## Quick Start (Local Development — No Docker Required)
-
-1. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. **Configure Environment**:
-   ```bash
-   copy .env.example .env
-   ```
-   Then edit `.env` and add your TMDB API key (free from https://www.themoviedb.org/settings/api).
-
-3. **Start the Server**:
-   ```bash
-   python -m uvicorn app.main:app --reload --port 8005
-   ```
-   On first launch, the server will:
-   - Download the MovieLens Latest dataset (~335MB)
-   - Seed 86K+ movies and 33M+ ratings into SQLite
-   - Sample 5M ratings and train SVD with 50 factors
-   - Save model checkpoints
-
-4. **Enrich Movies with TMDB Metadata**:
-   After the server is running, trigger TMDB enrichment:
-   ```
-   POST http://localhost:8005/api/system/enrich
-   ```
-
-5. **Open Interactive API Docs**:
-   Navigate to http://localhost:8005/docs
-
----
-
-## Quick Start (Docker Compose)
-
-```bash
-# Set your TMDB API key
-export TMDB_API_KEY=your_key_here
-
-# Launch all services
-docker-compose up --build
-```
-
----
-
-## API Endpoints Reference
+## 📦 API Reference
 
 ### Authentication (`/api/auth`)
 | Method | Endpoint | Description |
@@ -189,41 +75,99 @@ docker-compose up --build
 ### Movies (`/api/movies`)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/movies/genres` | Get all genres with movie counts (for filter dropdowns) |
-| GET | `/api/movies/browse` | Browse catalog with pagination, sorting, and genre/year/language filters |
-| GET | `/api/movies/search?q={query}` | Search movies by title with optional genre filter |
+| GET | `/api/movies/genres` | Get all available genres with movie counts |
+| GET | `/api/movies/trending` | Get time-decayed trending movies (paginated) |
+| GET | `/api/movies/browse` | Browse catalog with sorting, pagination, and genre/year/language filters |
+| GET | `/api/movies/search?q={query}` | Search movies with optional genre filter |
 | GET | `/api/movies/{id}` | Get single movie with full metadata |
 | GET | `/api/movies/{id}/similar` | Get similar movies (content/collaborative) |
-
-**Browse filter parameters:** `genre`, `genres` (comma-separated AND), `language`, `year`, `sort_by`, `order`, `page`, `page_size`
 
 ### Recommendations (`/api/recommendations`)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/recommendations/` | Personalized hybrid recommendations with full metadata |
+| GET | `/api/recommendations/` | Get personalized hybrid recommendations with explanations |
 
-### Ratings (`/api/ratings`)
+**Parameters:**
+*   `limit` (default: 10) — number of recommendations
+*   `bypass_cache` (default: false) — recalculate recommendation scores
+*   `include_explanations` (default: true) — attach explanation objects to items
+
+### User Ratings & Watchlist (`/api/ratings`)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/ratings/` | Submit or update a rating |
-| GET | `/api/ratings/history` | Get user's rating history |
-| POST | `/api/ratings/watchlist` | Add to watchlist |
-| GET | `/api/ratings/watchlist` | Get watchlist |
-| DELETE | `/api/ratings/watchlist/{id}` | Remove from watchlist |
+| GET | `/api/ratings/history` | Get user's rating history (paginated) |
+| POST | `/api/ratings/watchlist` | Add movie to watchlist |
+| GET | `/api/ratings/watchlist` | Get watchlist (paginated) |
+| DELETE | `/api/ratings/watchlist/{id}` | Remove movie from watchlist |
 
-### System (`/api/system`)
+### System & Pipeline Administration (`/api/system`)
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/system/health` | Health check (DB, Redis, Models) |
-| GET | `/api/system/stats` | Database stats & enrichment progress |
-| GET | `/api/system/metrics` | Model evaluation metrics |
-| POST | `/api/system/train` | Trigger model retraining |
-| POST | `/api/system/enrich` | Trigger TMDB metadata enrichment |
+| GET | `/api/system/health` | Health check (DB, Redis, SVD/TF-IDF Model status) |
+| GET | `/api/system/stats` | DB ingestion stats & TMDB enrichment progress |
+| GET | `/api/system/metrics` | Recommender validation metrics (RMSE, Coverage, etc.) |
+| POST | `/api/system/train` | Trigger offline training pipeline |
+| POST | `/api/system/enrich` | Trigger batch TMDB metadata enricher |
 
 ---
 
-## Running Tests
+## 📤 Sample Recommendation Payload
 
-```bash
-python -m pytest -v
+`GET /api/recommendations/?limit=1&include_explanations=true`
+
+```json
+{
+  "recommendation_type": "hybrid",
+  "movies": [
+    {
+      "id": 260,
+      "title": "Star Wars: Episode IV - A New Hope (1977)",
+      "genres": "Action|Adventure|Sci-Fi",
+      "popularity_score": 18.91,
+      "trending_score": 16.42,
+      "poster_url": "https://image.tmdb.org/t/p/w500/6FfCtAuVAW6XJjWY705F52R8OkR.jpg",
+      "backdrop_url": "https://image.tmdb.org/t/p/original/zqkmwi2qlyt5aLz8J5n1468.jpg",
+      "overview": "Princess Leia is held hostage by the evil Imperial forces...",
+      "director": "George Lucas",
+      "cast_list": "Mark Hamill, Harrison Ford, Carrie Fisher, Alec Guinness",
+      "release_date": "1977-05-25",
+      "vote_average": 8.2,
+      "runtime": 121,
+      "original_language": "en",
+      "tagline": "A long time ago in a galaxy far, far away...",
+      "user_tags": "sci-fi space classic adventure epic",
+      "explanation": {
+        "because_watched_id": 1196,
+        "because_watched_title": "Star Wars: Episode V - The Empire Strikes Back (1980)",
+        "similarity_score": 0.892,
+        "reason_type": "content"
+      }
+    }
+  ],
+  "generated_at": "2026-07-09T11:00:00Z",
+  "execution_time_seconds": 0.0482
+}
 ```
+
+---
+
+## 🛠️ Quick Start (Local Setup)
+
+1.  **Install Dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
+2.  **Configure Environment**:
+    ```bash
+    copy .env.example .env
+    ```
+    Edit `.env` to include your `TMDB_API_KEY`.
+3.  **Run Server**:
+    ```bash
+    python -m uvicorn app.main:app --reload --port 8005
+    ```
+4.  **Run Tests**:
+    ```bash
+    python -m pytest -v
+    ```
