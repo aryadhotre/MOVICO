@@ -171,3 +171,17 @@ The highest-scoring similarity match above $0.05$ is returned as the explanation
     ```bash
     python -m pytest -v
     ```
+
+---
+
+## 🤖 Continuous Integration (GitHub Actions)
+
+This project includes a production-ready CI pipeline configured via `.github/workflows/backend-ci.yml`.
+
+*   **Automation**: Runs automatically on every `push` and `pull_request` to the `main` branch.
+*   **Isolated Testing Environment**: 
+    *   Spins up a lightweight **Redis 7 (Alpine)** service container to validate recommendation caching.
+    *   Creates a virtual environment with **Python 3.11** and installs all dependencies listed in `requirements.txt`.
+    *   Runs the `pytest` suite in under **1 minute** by using an in-memory SQLite database and bypassing heavy database seeding.
+*   **Verification**: Ensures that routing, payload schemas, JWT authentication, and recommendation fallback behaviors remain stable during development.
+
