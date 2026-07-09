@@ -50,6 +50,7 @@ class MovieResponse(MovieBase):
     vote_average: Optional[float] = None
     original_language: Optional[str] = None
     tagline: Optional[str] = None
+    user_tags: Optional[str] = None
 
     # Computed convenience fields for the frontend
     poster_url: Optional[str] = None

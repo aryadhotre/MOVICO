@@ -8,7 +8,8 @@ It uses the **MovieLens Latest (33M+ ratings, 86K+ movies)** dataset — the lar
 
 ## Key Features
 
-- **Hybrid Recommendation Engine**: Combines Matrix Factorization (Funk SVD), Content-Based TF-IDF Similarity, and Popularity Fallback
+- **Hybrid Recommendation Engine**: Combines Matrix Factorization (Funk SVD), Rich Multi-Signal Content-Based TF-IDF, and Popularity Fallback
+- **8-Channel Content Features**: Genres, titles, plots, directors, cast, user-generated tags, release era, and language — far beyond genre-only matching
 - **TMDB Metadata Enrichment**: Automatic batch enrichment of 86K+ movies with posters, plots, cast, directors, and release dates
 - **Frontend-Ready API**: Every movie response includes full `poster_url`, `backdrop_url`, `overview`, `cast_list`, `director` — zero extra work for frontend developers
 - **Large-Scale Training**: Handles 33M+ ratings via intelligent sampling and configurable SVD hyperparameters
@@ -46,8 +47,16 @@ graph TD
 1. **New User (Cold Start)**: If a user has fewer than 5 ratings, the system recommends globally popular movies using: `mean_rating × log(vote_count)`
 
 2. **Active User (Hybrid)**: For users with 5+ ratings, the engine blends two models:
-   - **Collaborative Filtering (70% weight)**: Funk SVD Matrix Factorization trained via SGD learns latent user preferences from 33M+ rating patterns
-   - **Content-Based (30% weight)**: TF-IDF genre vectors compute cosine similarity between the user's taste profile and all candidate movies
+   - **Collaborative Filtering (70% weight)**: Funk SVD Matrix Factorization trained via SGD learns latent user preferences from 33M+ rating patterns across 50 latent factors
+   - **Content-Based (30% weight)**: Rich multi-signal TF-IDF computes cosine similarity using **8 feature channels**:
+     1. **Genres** (3x weighted) — Adventure, Animation, Comedy, etc.
+     2. **Title keywords** — movie name tokens
+     3. **Overview/plot** — full TMDB description (when enriched)
+     4. **Director** (2x weighted) — "you liked Nolan's other films"
+     5. **Cast** — actor name matching
+     6. **User-generated tags** — crowdsourced labels like "mind-bending", "twist ending"
+     7. **Release decade** — era-based taste preferences
+     8. **Original language** — for non-English cinema preferences
 
 3. **Result**: Already-watched movies are filtered out, and the top-K highest scoring candidates are returned with full TMDB metadata
 
@@ -99,14 +108,14 @@ A single API call (`GET /api/recommendations/`) returns everything needed to ren
 │   ├── models/
 │   │   ├── base.py          # Abstract base class for recommenders
 │   │   ├── collaborative.py # Funk SVD Matrix Factorization (50 latent factors)
-│   │   ├── content_based.py # Genre TF-IDF Similarities
+│   │   ├── content_based.py # Rich 8-channel TF-IDF Content Similarities
 │   │   ├── popularity.py    # Vote-weighted popularity baseline
-│   │   ├── hybrid.py        # Combined prediction scorer
+│   │   ├── hybrid.py        # Combined prediction scorer (70% SVD + 30% content)
 │   │   ├── evaluator.py     # RMSE, MAE, Precision@K, NDCG, Diversity, Novelty
 │   │   └── trainer.py       # Training with intelligent sampling for 33M+ datasets
 │   ├── pipeline/
 │   │   ├── ingest.py        # MovieLens downloader & database seeder
-│   │   ├── preprocess.py    # Sparse matrix builders
+│   │   ├── preprocess.py    # Rich multi-signal feature engineering & sparse matrix builders
 │   │   └── tmdb_enricher.py # TMDB API batch enrichment pipeline
 │   └── services/
 │       ├── cache.py         # Redis client for caching

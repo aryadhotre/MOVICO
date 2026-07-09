@@ -21,36 +21,133 @@ class MoviePreprocessor:
     @staticmethod
     def clean_title(title: str) -> str:
         """Removes the year suffix (e.g. '(1995)') and special characters from movie titles."""
-        # Remove trailing year: e.g. "Toy Story (1995)" -> "Toy Story"
         title_cleaned = re.sub(r"\s*\(\d{4}\)\s*$", "", title)
-        # Remove punctuation and lowercase
         title_cleaned = re.sub(r"[^\w\s]", "", title_cleaned).lower().strip()
         return title_cleaned
 
+    @staticmethod
+    def extract_year(title: str) -> str:
+        """Extracts the release year from movie title, returns decade token for era-based matching."""
+        match = re.search(r"\((\d{4})\)", title)
+        if match:
+            year = int(match.group(1))
+            decade = (year // 10) * 10
+            return f"decade_{decade}s"
+        return ""
+
+    @staticmethod
+    def build_rich_feature_text(movie) -> str:
+        """Constructs a rich multi-signal text document for a single movie.
+        
+        Combines multiple metadata fields with strategic weighting:
+        - Genres (repeated 3x for high importance)
+        - Movie title keywords
+        - Overview/plot description
+        - Director name (repeated 2x)
+        - Cast names
+        - User-generated tags from MovieLens
+        - Release era/decade
+        - Original language
+        """
+        parts = []
+        
+        # 1. Genres (high weight - repeated 3x)
+        genres = getattr(movie, "genres", "") or ""
+        if genres and genres != "(no genres listed)":
+            genre_text = genres.replace("|", " ")
+            parts.extend([genre_text] * 3)
+        
+        # 2. Clean title keywords
+        title = getattr(movie, "title", "") or ""
+        clean = re.sub(r"\s*\(\d{4}\)\s*$", "", title)
+        clean = re.sub(r"[^\w\s]", "", clean).lower().strip()
+        if clean:
+            parts.append(clean)
+        
+        # 3. Overview / plot description (if enriched via TMDB)
+        overview = getattr(movie, "overview", "") or ""
+        if overview and overview.strip():
+            parts.append(overview.lower())
+        
+        # 4. Director (medium weight - repeated 2x)
+        director = getattr(movie, "director", "") or ""
+        if director and director.strip():
+            director_clean = re.sub(r"[^\w\s]", "", director).lower()
+            parts.extend([director_clean] * 2)
+        
+        # 5. Cast members
+        cast = getattr(movie, "cast_list", "") or ""
+        if cast and cast.strip():
+            cast_clean = re.sub(r"[^\w\s]", "", cast).lower()
+            parts.append(cast_clean)
+        
+        # 6. User-generated tags from MovieLens (high signal)
+        tags = getattr(movie, "user_tags", "") or ""
+        if tags and tags.strip():
+            parts.append(tags.lower())
+        
+        # 7. Release decade for era-based matching
+        era = MoviePreprocessor.extract_year(title)
+        if era:
+            parts.append(era)
+        
+        # 8. Original language
+        lang = getattr(movie, "original_language", "") or ""
+        if lang and lang.strip() and lang != "en":
+            parts.append(f"lang_{lang}")
+        
+        return " ".join(parts)
+
     def build_content_features(self, db: Session):
-        """Builds content-based TF-IDF matrices based on titles and genres."""
-        logger.info("Retrieving movies from DB for preprocessing...")
+        """Builds content-based TF-IDF matrices using rich multi-signal text features.
+        
+        Feature signals used:
+        - Genres (3x weighted)
+        - Title keywords
+        - Overview/plot (from TMDB enrichment)
+        - Director (2x weighted)
+        - Cast names
+        - User-generated tags (from MovieLens tags.csv)
+        - Release decade
+        - Original language
+        """
+        logger.info("Retrieving movies from DB for content feature engineering...")
         movies = db.query(Movie).all()
         if not movies:
             raise ValueError("No movies found in database. Run the ingestion pipeline first.")
 
-        df = pd.DataFrame([{
-            "id": m.id,
-            "title": m.title,
-            "genres": m.genres
-        } for m in movies])
-
-        # Clean titles and format genres for TF-IDF
-        # Replace '|' separator with space so genres act as distinct tokens, e.g., "Action Adventure"
-        df["clean_genres"] = df["genres"].str.replace("|", " ", regex=False)
-        df["clean_title"] = df["title"].apply(self.clean_title)
+        logger.info(f"Building rich text features for {len(movies):,} movies...")
+        movie_ids = []
+        feature_docs = []
         
-        # Combine title and genres for the final text representation
-        df["combined_features"] = df["clean_title"] + " " + df["clean_genres"]
+        for movie in movies:
+            movie_ids.append(movie.id)
+            feature_docs.append(self.build_rich_feature_text(movie))
+        
+        # Count how many movies have enriched data
+        enriched_count = sum(1 for m in movies if m.overview and m.overview.strip())
+        tagged_count = sum(1 for m in movies if m.user_tags and m.user_tags.strip())
+        logger.info(
+            f"Feature composition: {len(movies):,} movies total, "
+            f"{enriched_count:,} with TMDB overview, "
+            f"{tagged_count:,} with user tags."
+        )
 
-        logger.info("Computing TF-IDF matrices for content similarity...")
-        vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
-        tfidf_matrix = vectorizer.fit_transform(df["combined_features"])
+        logger.info("Computing TF-IDF matrices with rich features...")
+        vectorizer = TfidfVectorizer(
+            stop_words="english",
+            ngram_range=(1, 2),
+            max_features=50000,  # Cap vocabulary for memory efficiency on large catalogs
+            min_df=2,            # Ignore terms that appear in fewer than 2 movies
+            max_df=0.95,         # Ignore terms that appear in >95% of movies
+            sublinear_tf=True    # Apply sublinear TF scaling (1 + log(tf))
+        )
+        tfidf_matrix = vectorizer.fit_transform(feature_docs)
+        
+        logger.info(
+            f"TF-IDF matrix shape: {tfidf_matrix.shape} "
+            f"(vocabulary size: {len(vectorizer.vocabulary_):,})"
+        )
         
         # Cache vectors, mappings, and vectorizer
         tfidf_path = os.path.join(self.models_dir, "tfidf_matrix.pkl")
@@ -58,8 +155,8 @@ class MoviePreprocessor:
         mappings_path = os.path.join(self.models_dir, "movie_mappings.pkl")
         
         # Movie ID mapping to sparse matrix row indices
-        movie_to_idx = {row["id"]: idx for idx, row in df.iterrows()}
-        idx_to_movie = {idx: row["id"] for idx, row in df.iterrows()}
+        movie_to_idx = {mid: idx for idx, mid in enumerate(movie_ids)}
+        idx_to_movie = {idx: mid for idx, mid in enumerate(movie_ids)}
 
         with open(tfidf_path, "wb") as f:
             pickle.dump(tfidf_matrix, f)
@@ -68,7 +165,7 @@ class MoviePreprocessor:
         with open(mappings_path, "wb") as f:
             pickle.dump({"movie_to_idx": movie_to_idx, "idx_to_movie": idx_to_movie}, f)
             
-        logger.info("Content-based TF-IDF matrices generated and saved successfully.")
+        logger.info("Rich content-based TF-IDF matrices generated and saved successfully.")
         return tfidf_matrix, movie_to_idx
 
     def build_rating_matrix(self, db: Session):

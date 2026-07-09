@@ -37,6 +37,7 @@ class Movie(Base):
     vote_average = Column(Float, nullable=True)  # TMDB community vote average
     original_language = Column(String(10), nullable=True)
     tagline = Column(String(500), nullable=True)
+    user_tags = Column(Text, nullable=True)  # Aggregated user-generated tags from MovieLens
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

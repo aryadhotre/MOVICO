@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class CollaborativeRecommender(BaseRecommender):
-    def __init__(self, k_components: int = 20, lr: float = 0.005, reg: float = 0.02, epochs: int = 15):
+    def __init__(self, k_components: int = 50, lr: float = 0.005, reg: float = 0.02, epochs: int = 20):
         self.k_components = k_components
         self.lr = lr
         self.reg = reg

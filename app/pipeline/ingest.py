@@ -81,14 +81,15 @@ class DataPipeline:
         movies_path = os.path.join(extract_dir, "movies.csv")
         ratings_path = os.path.join(extract_dir, "ratings.csv")
         links_path = os.path.join(extract_dir, "links.csv")
+        tags_path = os.path.join(extract_dir, "tags.csv")
 
         # Check local fallbacks if extracted paths don't exist
         fallback_dir = r"Movie-Recommendation-System-MOVICO-main\MOVICO\dataset"
         if not os.path.exists(movies_path):
             movies_path = os.path.join(fallback_dir, "movies.csv")
             ratings_path = os.path.join(fallback_dir, "ratings.csv")
-            # Links file doesn't exist in fallback, we'll construct mock links or search for it.
             links_path = None
+            tags_path = None
 
         logger.info(f"Loading files: movies={movies_path}, ratings={ratings_path}")
         movies_df = pd.read_csv(movies_path)
@@ -96,19 +97,33 @@ class DataPipeline:
         # For large datasets, log progress
         logger.info(f"Loading ratings file (this may take a moment for large datasets)...")
         ratings_df = pd.read_csv(ratings_path)
-        logger.info(f"Loaded {len(movies_df)} movies and {len(ratings_df):,} ratings from CSV.")
+        logger.info(f"Loaded {len(movies_df):,} movies and {len(ratings_df):,} ratings from CSV.")
         
         # Parse links if available
         if links_path and os.path.exists(links_path):
             logger.info(f"Loading links from {links_path}")
             links_df = pd.read_csv(links_path)
-            # Ensure proper string format, pad with leading zeros for IMDb if needed
             links_df["imdbId"] = links_df["imdbId"].astype(str).str.replace(".0", "", regex=False).str.zfill(7)
             links_df["tmdbId"] = links_df["tmdbId"].astype(str).str.replace(".0", "", regex=False)
             movies_df = pd.merge(movies_df, links_df, on="movieId", how="left")
         else:
             movies_df["imdbId"] = None
             movies_df["tmdbId"] = None
+
+        # Load and aggregate user-generated tags per movie
+        if tags_path and os.path.exists(tags_path):
+            logger.info(f"Loading user-generated tags from {tags_path}...")
+            tags_df = pd.read_csv(tags_path)
+            tags_df["tag"] = tags_df["tag"].astype(str).str.lower().str.strip()
+            # Aggregate unique tags per movie, take top 15 most frequent
+            tag_agg = tags_df.groupby("movieId")["tag"].apply(
+                lambda tags: " ".join(tags.value_counts().head(15).index.tolist())
+            ).reset_index()
+            tag_agg.columns = ["movieId", "user_tags"]
+            movies_df = pd.merge(movies_df, tag_agg, on="movieId", how="left")
+            logger.info(f"Aggregated tags for {len(tag_agg):,} movies.")
+        else:
+            movies_df["user_tags"] = None
 
         # Basic Validation
         assert "movieId" in movies_df.columns, "Missing movieId column in movies"
@@ -118,17 +133,19 @@ class DataPipeline:
         assert "movieId" in ratings_df.columns, "Missing movieId column in ratings"
         assert "rating" in ratings_df.columns, "Missing rating column in ratings"
         
-        # Clean title column (e.g., stripping whitespace)
+        # Clean title column
         movies_df["title"] = movies_df["title"].str.strip()
         
+        # Extract release year from title (e.g., "Toy Story (1995)" -> 1995)
+        import re
+        movies_df["release_year"] = movies_df["title"].str.extract(r"\((\d{4})\)$", expand=False)
+        
         # Calculate popularity scores for movies (mean rating * log(count + 1))
-        # This provides a balanced measure of rating volume and average sentiment.
         logger.info("Computing popularity scores...")
         agg_stats = ratings_df.groupby("movieId").agg(
             mean_rating=("rating", "mean"),
             vote_count=("rating", "count")
         )
-        # Scale count logarithmically to not let massive blockbusters skew too high
         agg_stats["popularity_score"] = agg_stats["mean_rating"] * np.log1p(agg_stats["vote_count"])
         movies_df = pd.merge(movies_df, agg_stats["popularity_score"], left_on="movieId", right_index=True, how="left")
         movies_df["popularity_score"] = movies_df["popularity_score"].fillna(0.0)
@@ -149,7 +166,8 @@ class DataPipeline:
                     "genres": str(row["genres"]),
                     "imdb_id": str(row["imdbId"]) if pd.notna(row["imdbId"]) else None,
                     "tmdb_id": str(row["tmdbId"]) if pd.notna(row["tmdbId"]) else None,
-                    "popularity_score": float(row["popularity_score"])
+                    "popularity_score": float(row["popularity_score"]),
+                    "user_tags": str(row["user_tags"]) if pd.notna(row.get("user_tags")) else None
                 })
             
             # Batch insertion in chunks for large datasets

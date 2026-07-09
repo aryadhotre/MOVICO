@@ -65,7 +65,8 @@ def db():
             poster_path="/uXDfjJbdP4ijSERjOH7ROa6o.jpg",
             overview="Woody, a traditional pull-string cowboy doll, is Andy's favorite toy.",
             director="John Lasseter", cast_list="Tom Hanks, Tim Allen, Don Rickles",
-            release_date="1995-10-30", vote_average=7.9, runtime=81
+            release_date="1995-10-30", vote_average=7.9, runtime=81,
+            user_tags="pixar animation classic fun childhood"
         ),
         Movie(
             id=2, title="Jumanji (1995)", 
