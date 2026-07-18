@@ -53,29 +53,30 @@ def train_and_evaluate_models(db: Session = None) -> dict:
                 f"Large dataset detected ({total_ratings:,} ratings). "
                 f"Sampling {sample_size:,} ratings for SVD training."
             )
-            # Fetch a random sample using database-level offset/limit for memory efficiency
-            # We'll fetch in chunks to avoid loading everything into memory
             ratings_list = _fetch_sampled_ratings(db, sample_size)
+            random.seed(42)
+            random.shuffle(ratings_list)
+            split_idx = int(len(ratings_list) * 0.8)
+            train_ratings = ratings_list[:split_idx]
+            test_ratings = ratings_list[split_idx:]
+            train_df = pd.DataFrame(train_ratings)
+            full_df = pd.DataFrame(ratings_list)
+            num_ratings_used = len(ratings_list)
         else:
-            logger.info(f"Loading all {total_ratings:,} ratings for training...")
-            ratings = db.query(Rating).yield_per(50000).all()
-            ratings_list = [{
-                "user_id": r.user_id,
-                "movie_id": r.movie_id,
-                "rating": r.rating,
-                "timestamp": r.timestamp
-            } for r in ratings]
+            logger.info(f"Loading all {total_ratings:,} ratings for training via raw SQL...")
+            conn = db.bind.raw_connection()
+            full_df = pd.read_sql_query("SELECT user_id, movie_id, rating, timestamp FROM ratings", conn)
+            # Shuffle using pandas
+            full_df = full_df.sample(frac=1, random_state=42).reset_index(drop=True)
+            split_idx = int(len(full_df) * 0.8)
+            train_df = full_df.iloc[:split_idx]
+            test_df = full_df.iloc[split_idx:]
+            
+            test_ratings = test_df.to_dict(orient="records")
+            num_ratings_used = len(full_df)
 
-        logger.info(f"Working with {len(ratings_list):,} ratings for model training.")
-
-        # 3. Train-Test Split (80/20)
-        random.seed(42)
-        random.shuffle(ratings_list)
-        split_idx = int(len(ratings_list) * 0.8)
-        train_ratings = ratings_list[:split_idx]
-        test_ratings = ratings_list[split_idx:]
-
-        logger.info(f"Split data into {len(train_ratings):,} training and {len(test_ratings):,} testing samples.")
+        logger.info(f"Working with {num_ratings_used:,} ratings for model training.")
+        logger.info(f"Split data into {len(train_df):,} training and {len(test_ratings):,} testing samples.")
 
         # 4. Fit content-based vectors on complete catalog
         logger.info("Fitting content-based TF-IDF features...")
@@ -95,7 +96,6 @@ def train_and_evaluate_models(db: Session = None) -> dict:
 
         # 5. Construct user-movie sparse matrices for SVD model using training data only
         logger.info("Building User-Item rating matrix on training partition...")
-        train_df = pd.DataFrame(train_ratings)
         
         train_user_ids = train_df["user_id"].unique()
         train_movie_ids = train_df["movie_id"].unique()
@@ -158,7 +158,7 @@ def train_and_evaluate_models(db: Session = None) -> dict:
         metrics["training_duration_seconds"] = round(time.time() - start_time, 2)
         metrics["trained_at"] = pd.Timestamp.now().isoformat()
         metrics["total_ratings_in_db"] = total_ratings
-        metrics["ratings_used_for_training"] = len(ratings_list)
+        metrics["ratings_used_for_training"] = num_ratings_used
         metrics["svd_factors"] = settings.SVD_FACTORS
         metrics["svd_epochs"] = settings.SVD_EPOCHS
 
@@ -172,7 +172,6 @@ def train_and_evaluate_models(db: Session = None) -> dict:
 
         # 9. Re-fit collaborative SVD on the ENTIRE working set for production inference
         logger.info("Re-fitting collaborative SVD on the full working set for production inference...")
-        full_df = pd.DataFrame(ratings_list)
         
         full_user_ids = full_df["user_id"].unique()
         full_movie_ids = full_df["movie_id"].unique()
