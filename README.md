@@ -141,7 +141,12 @@ The highest-scoring similarity match above $0.05$ is returned as the explanation
         "because_watched_id": 1196,
         "because_watched_title": "Star Wars: Episode V - The Empire Strikes Back (1980)",
         "similarity_score": 0.892,
-        "reason_type": "content"
+        "reason_type": "content",
+        "genre_match": 0.667,
+        "director_match": 0.0,
+        "theme_match": 0.892,
+        "collab_weight": 0.7,
+        "content_weight": 0.3
       }
     }
   ],
