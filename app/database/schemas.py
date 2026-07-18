@@ -145,15 +145,18 @@ class WatchlistResponse(BaseModel):
 
 # Recommendation Schemas
 class RecommendationExplanation(BaseModel):
-    because_watched_id: int
-    because_watched_title: str
-    similarity_score: float
-    reason_type: str  # e.g., "content" or "collaborative"
+    because_watched_id: Optional[int] = None
+    because_watched_title: Optional[str] = None
+    similarity_score: Optional[float] = 0.0
+    reason_type: str  # e.g., "content", "collaborative", "popularity"
     genre_match: Optional[float] = 0.0
     director_match: Optional[float] = 0.0
     theme_match: Optional[float] = 0.0
     collab_weight: Optional[float] = 0.0
     content_weight: Optional[float] = 0.0
+    cast_match: Optional[float] = 0.0
+    tag_match: Optional[float] = 0.0
+    message: Optional[str] = None
 
 class RecommendedMovieResponse(MovieResponse):
     explanation: Optional[RecommendationExplanation] = None
