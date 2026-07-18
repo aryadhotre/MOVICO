@@ -40,7 +40,7 @@ class RecommenderCoordinator:
                 movie_objs = []
                 rec_ids = []
                 for item in sliced_recs:
-                    movie = db.query(Movie).filter(Movie.id == item["movie_id"]).first()
+                    movie = db.query(Movie).filter(Movie.id == int(item["movie_id"])).first()
                     if movie:
                         movie_objs.append(movie)
                         rec_ids.append(movie.id)
@@ -100,7 +100,7 @@ class RecommenderCoordinator:
         # 4. Format objects as RecommendedMovieResponse
         formatted_movies = []
         for item in sliced_recs:
-            movie = db.query(Movie).filter(Movie.id == item["movie_id"]).first()
+            movie = db.query(Movie).filter(Movie.id == int(item["movie_id"])).first()
             if movie:
                 schema_movie = RecommendedMovieResponse.from_orm(movie)
                 if "explanation" in item and item["explanation"]:
