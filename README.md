@@ -146,7 +146,9 @@ The highest-scoring similarity match above $0.05$ is returned as the explanation
         "director_match": 0.0,
         "theme_match": 0.892,
         "collab_weight": 0.7,
-        "content_weight": 0.3
+        "content_weight": 0.3,
+        "cast_match": 0.0,
+        "tag_match": 0.15
       }
     }
   ],
