@@ -311,7 +311,8 @@ def test_recommendations_with_explanations(client: TestClient):
     # Let's confirm if they returned cold start.
     if data["recommendation_type"] == "popularity_cold_start":
         for movie in data["movies"]:
-            assert movie["explanation"] is None
+            assert movie["explanation"] is not None
+            assert movie["explanation"]["reason_type"] == "popularity"
     else:
         # If it generated hybrid recommendations, verify explanations schema structure
         for movie in data["movies"]:
