@@ -25,7 +25,7 @@ class HybridRecommender(BaseRecommender):
         """Not called directly; SVD and Content models are trained via their respective routines."""
         pass
 
-    def _generate_explanations(self, user_id: int, rec_movie_ids: List[int], db: Session) -> Dict[int, Dict[str, Any]]:
+    def _generate_explanations(self, user_id: int, rec_movie_ids: List[int], db: Session, candidate_scores: Dict[int, Dict[str, float]] = None) -> Dict[int, Dict[str, Any]]:
         """Generates content-similarity-based explanations for recommendations.
         
         For each recommended movie, finds the movie that the user rated highly (>= 4.0)
@@ -66,10 +66,10 @@ class HybridRecommender(BaseRecommender):
         # Fetch watched and recommended movie objects to compare metadata
         from sklearn.metrics.pairwise import cosine_similarity
         watched_movies_map = {
-            m.id: m for m in db.query(Movie).filter(Movie.id.in_(valid_watched_ids)).all()
+            m.id: m for m in db.query(Movie).filter(Movie.id.in_([int(x) for x in valid_watched_ids])).all()
         }
         rec_movies_map = {
-            m.id: m for m in db.query(Movie).filter(Movie.id.in_(valid_rec_ids)).all()
+            m.id: m for m in db.query(Movie).filter(Movie.id.in_([int(x) for x in valid_rec_ids])).all()
         }
 
         # Build vectors
@@ -104,6 +104,27 @@ class HybridRecommender(BaseRecommender):
                     if rec_movie.director and watched_movie.director:
                         director_match_score = 1.0 if rec_movie.director.strip().lower() == watched_movie.director.strip().lower() else 0.0
 
+                # Calculate Cast Match
+                cast_rec = set(c.strip().lower() for c in rec_movie.cast_list.split(',')) if rec_movie and rec_movie.cast_list else set()
+                cast_wat = set(c.strip().lower() for c in watched_movie.cast_list.split(',')) if watched_movie and watched_movie.cast_list else set()
+                cast_match_score = len(cast_rec.intersection(cast_wat)) / len(cast_rec.union(cast_wat)) if cast_rec.union(cast_wat) else 0.0
+
+                # Calculate Tag Match
+                tag_rec = set(t.strip().lower() for t in rec_movie.user_tags.split()) if rec_movie and rec_movie.user_tags else set()
+                tag_wat = set(t.strip().lower() for t in watched_movie.user_tags.split()) if watched_movie and watched_movie.user_tags else set()
+                tag_match_score = len(tag_rec.intersection(tag_wat)) / len(tag_rec.union(tag_wat)) if tag_rec.union(tag_wat) else 0.0
+
+                # Calculate Dynamic collab/content weight contribution
+                collab_weight = self.w_collab
+                content_weight = self.w_content
+                if candidate_scores and rec_id in candidate_scores:
+                    scores = candidate_scores[rec_id]
+                    collab_contribution = self.w_collab * scores["collab_norm"]
+                    content_contribution = self.w_content * scores["content_sim"]
+                    total = collab_contribution + content_contribution
+                    collab_weight = round(collab_contribution / total, 3) if total > 0 else 0.0
+                    content_weight = round(content_contribution / total, 3) if total > 0 else 0.0
+
                 explanations[rec_id] = {
                     "because_watched_id": watched_id,
                     "because_watched_title": watched_movie.title if watched_movie else "a movie you rated",
@@ -112,8 +133,10 @@ class HybridRecommender(BaseRecommender):
                     "genre_match": round(genre_match_score, 3),
                     "director_match": director_match_score,
                     "theme_match": round(best_score, 3),
-                    "collab_weight": self.w_collab,
-                    "content_weight": self.w_content
+                    "collab_weight": collab_weight,
+                    "content_weight": content_weight,
+                    "cast_match": round(cast_match_score, 3),
+                    "tag_match": round(tag_match_score, 3)
                 }
 
         return explanations
@@ -130,7 +153,12 @@ class HybridRecommender(BaseRecommender):
         if user_ratings_count < self.cold_start_threshold:
             logger.info(f"User {user_id} has {user_ratings_count} ratings (< threshold {self.cold_start_threshold}). Triggering Cold-Start Popularity fallback.")
             recs = self.popularity_model.recommend(user_id, top_n, db)
-            # Popularity fallback doesn't have explanations
+            # Attach cold-start explanation to each returned item
+            for item in recs:
+                item["explanation"] = {
+                    "reason_type": "popularity",
+                    "message": "Recommended because it's currently popular"
+                }
             return recs
 
         # 2. Try loading SVD and Content models if not already loaded in memory
@@ -141,12 +169,24 @@ class HybridRecommender(BaseRecommender):
                 self.content_model.load()
         except FileNotFoundError as e:
             logger.warning(f"Trained model files missing. Falling back to popularity model. Details: {e}")
-            return self.popularity_model.recommend(user_id, top_n, db)
+            recs = self.popularity_model.recommend(user_id, top_n, db)
+            for item in recs:
+                item["explanation"] = {
+                    "reason_type": "popularity",
+                    "message": "Recommended because it's currently popular"
+                }
+            return recs
 
         # Ensure user exists in collaborative mappings
         if user_id not in self.collab_model.user_to_idx:
             logger.info(f"User {user_id} not found in collaborative model mappings. Falling back to popularity model.")
-            return self.popularity_model.recommend(user_id, top_n, db)
+            recs = self.popularity_model.recommend(user_id, top_n, db)
+            for item in recs:
+                item["explanation"] = {
+                    "reason_type": "popularity",
+                    "message": "Recommended because it's currently popular"
+                }
+            return recs
 
         # 3. Retrieve User's Watched Movies
         watched_movie_ids = {r.movie_id for r in user_ratings}
@@ -157,6 +197,7 @@ class HybridRecommender(BaseRecommender):
 
         # 5. Hybrid Scoring Loop
         hybrid_candidates = []
+        candidate_scores = {}
         for movie_id, i_idx in self.collab_model.movie_to_idx.items():
             if movie_id in watched_movie_ids:
                 continue
@@ -178,6 +219,10 @@ class HybridRecommender(BaseRecommender):
                 "collab_rating": collab_rating,
                 "content_score": content_sim
             })
+            candidate_scores[movie_id] = {
+                "collab_norm": collab_norm,
+                "content_sim": content_sim
+            }
 
         # Sort candidate movies by hybrid score descending
         hybrid_candidates.sort(key=lambda x: x["score"], reverse=True)
@@ -185,12 +230,12 @@ class HybridRecommender(BaseRecommender):
 
         # 6. Populate explanations if requested
         rec_ids = [item["movie_id"] for item in top_candidates]
-        explanations = self._generate_explanations(user_id, rec_ids, db) if include_explanations else {}
+        explanations = self._generate_explanations(user_id, rec_ids, db, candidate_scores) if include_explanations else {}
 
         # 7. Populate final movie metadata
         recommendations = []
         for rank, item in enumerate(top_candidates):
-            movie = db.query(Movie).filter(Movie.id == item["movie_id"]).first()
+            movie = db.query(Movie).filter(Movie.id == int(item["movie_id"])).first()
             if movie:
                 recommendations.append({
                     "movie_id": movie.id,
