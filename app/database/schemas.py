@@ -149,6 +149,11 @@ class RecommendationExplanation(BaseModel):
     because_watched_title: str
     similarity_score: float
     reason_type: str  # e.g., "content" or "collaborative"
+    genre_match: Optional[float] = 0.0
+    director_match: Optional[float] = 0.0
+    theme_match: Optional[float] = 0.0
+    collab_weight: Optional[float] = 0.0
+    content_weight: Optional[float] = 0.0
 
 class RecommendedMovieResponse(MovieResponse):
     explanation: Optional[RecommendationExplanation] = None

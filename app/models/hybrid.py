@@ -1,4 +1,5 @@
 import logging
+import numpy as np
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.models.base import BaseRecommender
@@ -62,10 +63,13 @@ class HybridRecommender(BaseRecommender):
         if not valid_watched_ids or not valid_rec_ids:
             return explanations
 
-        # Fetch watched movie titles in one query
+        # Fetch watched and recommended movie objects to compare metadata
         from sklearn.metrics.pairwise import cosine_similarity
         watched_movies_map = {
-            m.id: m.title for m in db.query(Movie.id, Movie.title).filter(Movie.id.in_(valid_watched_ids)).all()
+            m.id: m for m in db.query(Movie).filter(Movie.id.in_(valid_watched_ids)).all()
+        }
+        rec_movies_map = {
+            m.id: m for m in db.query(Movie).filter(Movie.id.in_(valid_rec_ids)).all()
         }
 
         # Build vectors
@@ -86,11 +90,30 @@ class HybridRecommender(BaseRecommender):
             
             if best_score > 0.05:  # Require a minimum similarity threshold to explain
                 watched_id = valid_watched_ids[best_idx]
+                rec_movie = rec_movies_map.get(rec_id)
+                watched_movie = watched_movies_map.get(watched_id)
+                
+                # Calculate Genre Match (Jaccard Similarity)
+                g_rec = set(rec_movie.genres.split('|')) if rec_movie and rec_movie.genres else set()
+                g_wat = set(watched_movie.genres.split('|')) if watched_movie and watched_movie.genres else set()
+                genre_match_score = len(g_rec.intersection(g_wat)) / len(g_rec.union(g_wat)) if g_rec.union(g_wat) else 0.0
+                
+                # Calculate Director Match
+                director_match_score = 0.0
+                if rec_movie and watched_movie and getattr(rec_movie, 'director', None) and getattr(watched_movie, 'director', None):
+                    if rec_movie.director and watched_movie.director:
+                        director_match_score = 1.0 if rec_movie.director.strip().lower() == watched_movie.director.strip().lower() else 0.0
+
                 explanations[rec_id] = {
                     "because_watched_id": watched_id,
-                    "because_watched_title": watched_movies_map.get(watched_id, "a movie you rated"),
+                    "because_watched_title": watched_movie.title if watched_movie else "a movie you rated",
                     "similarity_score": round(best_score, 3),
-                    "reason_type": "content"
+                    "reason_type": "content",
+                    "genre_match": round(genre_match_score, 3),
+                    "director_match": director_match_score,
+                    "theme_match": round(best_score, 3),
+                    "collab_weight": self.w_collab,
+                    "content_weight": self.w_content
                 }
 
         return explanations
