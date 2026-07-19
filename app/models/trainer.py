@@ -144,6 +144,15 @@ def train_and_evaluate_models(db: Session = None) -> dict:
                 test_ratings_by_user[u_id] = []
             test_ratings_by_user[u_id].append(r)
 
+        # To prevent evaluation from taking 18+ hours, evaluate on a representative sample of 2,000 users
+        eval_sample_size = 2000
+        if len(test_ratings_by_user) > eval_sample_size:
+            import random
+            random.seed(42)
+            sampled_keys = random.sample(list(test_ratings_by_user.keys()), eval_sample_size)
+            test_ratings_by_user = {k: test_ratings_by_user[k] for k in sampled_keys}
+            logger.info(f"Sampled {eval_sample_size:,} validation users for fast ranking metrics evaluation.")
+
         # Run evaluation
         regression_metrics = evaluator.evaluate_regression(collab_model, test_ratings)
         ranking_metrics = evaluator.evaluate_ranking_and_catalog(

@@ -70,8 +70,13 @@ class ModelEvaluator:
             if not relevant_movies:
                 continue # Skip users with no relevant items in test set
                 
-            # Get top K recommendations
-            recs = recommender.recommend(user_id, top_n=self.k, db=db)
+            # Get all movies watched by user in DB, and subtract their test movies
+            watched_in_db = {r[0] for r in db.query(Rating.movie_id).filter(Rating.user_id == int(user_id)).all()}
+            test_movies = {r["movie_id"] for r in ratings}
+            exclude_movie_ids = watched_in_db - test_movies
+
+            # Get top K recommendations without explanation or metadata queries to speed up evaluation
+            recs = recommender.recommend(user_id, top_n=self.k, db=db, include_explanations=False, exclude_movie_ids=exclude_movie_ids, include_metadata=False)
             rec_ids = [r["movie_id"] for r in recs]
             
             # Update overall catalog coverage set

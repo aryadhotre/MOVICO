@@ -189,10 +189,15 @@ class HybridRecommender(BaseRecommender):
             return recs
 
         # 3. Retrieve User's Watched Movies
-        watched_movie_ids = {r.movie_id for r in user_ratings}
+        watched_movie_ids = kwargs.get("exclude_movie_ids")
+        if watched_movie_ids is None:
+            watched_movie_ids = {r.movie_id for r in user_ratings}
+        else:
+            watched_movie_ids = set(watched_movie_ids)
 
         # 4. Generate Content-based Similarities
-        content_recs = self.content_model.recommend(user_id, top_n=100, db=db)
+        include_metadata = kwargs.get("include_metadata", True)
+        content_recs = self.content_model.recommend(user_id, top_n=100, db=db, exclude_movie_ids=watched_movie_ids, include_metadata=include_metadata)
         content_scores = {rec["movie_id"]: rec["score"] for rec in content_recs}
 
         # 5. Hybrid Scoring Loop
@@ -233,17 +238,18 @@ class HybridRecommender(BaseRecommender):
         explanations = self._generate_explanations(user_id, rec_ids, db, candidate_scores) if include_explanations else {}
 
         # 7. Populate final movie metadata
+        include_metadata = kwargs.get("include_metadata", True)
         recommendations = []
         for rank, item in enumerate(top_candidates):
-            movie = db.query(Movie).filter(Movie.id == int(item["movie_id"])).first()
-            if movie:
+            movie = db.query(Movie).filter(Movie.id == int(item["movie_id"])).first() if include_metadata else None
+            if not include_metadata or movie:
                 recommendations.append({
-                    "movie_id": movie.id,
+                    "movie_id": int(item["movie_id"]),
                     "score": item["score"],
                     "rank": rank + 1,
-                    "title": movie.title,
-                    "genres": movie.genres,
-                    "explanation": explanations.get(movie.id),
+                    "title": movie.title if movie else "Unknown",
+                    "genres": movie.genres if movie else "Unknown",
+                    "explanation": explanations.get(int(item["movie_id"])) if (include_explanations and movie) else None,
                     "metadata": {
                         "collab_rating_prediction": round(item["collab_rating"], 2),
                         "content_similarity": round(item["content_score"], 3)

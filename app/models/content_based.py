@@ -71,7 +71,11 @@ class ContentBasedRecommender(BaseRecommender):
         candidate_indices = np.argsort(similarities)[::-1]
         
         # Filter out movies the user has already rated
-        rated_movie_ids = {r.movie_id for r in user_ratings}
+        rated_movie_ids = kwargs.get("exclude_movie_ids")
+        if rated_movie_ids is None:
+            rated_movie_ids = {r.movie_id for r in user_ratings}
+        else:
+            rated_movie_ids = set(rated_movie_ids)
         
         recommendations = []
         rank = 1
@@ -84,14 +88,15 @@ class ContentBasedRecommender(BaseRecommender):
             if score <= 0.0:
                 break  # Stop when similarity reaches 0
                 
-            movie = db.query(Movie).filter(Movie.id == movie_id).first()
-            if movie:
+            include_metadata = kwargs.get("include_metadata", True)
+            movie = db.query(Movie).filter(Movie.id == movie_id).first() if include_metadata else None
+            if not include_metadata or movie:
                 recommendations.append({
-                    "movie_id": movie.id,
+                    "movie_id": movie_id,
                     "score": score,
                     "rank": rank,
-                    "title": movie.title,
-                    "genres": movie.genres
+                    "title": movie.title if movie else "Unknown",
+                    "genres": movie.genres if movie else "Unknown"
                 })
                 rank += 1
                 if len(recommendations) >= top_n:
