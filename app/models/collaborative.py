@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class CollaborativeRecommender(BaseRecommender):
-    def __init__(self, k_components: int = 50, lr: float = 0.005, reg: float = 0.02, epochs: int = 20):
+    def __init__(self, k_components: int = 50, lr: float = 0.005, reg: float = 0.05, epochs: int = 20):
         self.k_components = k_components
         self.lr = lr
         self.reg = reg
@@ -32,7 +32,7 @@ class CollaborativeRecommender(BaseRecommender):
         self.movie_to_idx = {}
         self.idx_to_movie = {}
 
-    def fit(self, csr_matrix, mappings: Dict[str, Any]):
+    def fit(self, csr_matrix, mappings: Dict[str, Any], val_data: Optional[List[Dict[str, Any]]] = None):
         """Trains the SVD (Funk SVD) model using Stochastic Gradient Descent (SGD) on known ratings."""
         self.user_to_idx = mappings.get("user_to_idx", {})
         self.idx_to_user = mappings.get("idx_to_user", {})
@@ -59,6 +59,10 @@ class CollaborativeRecommender(BaseRecommender):
         self.global_mean = float(np.mean(ratings)) if len(ratings) > 0 else 0.0
         
         logger.info("Starting SGD training...")
+        best_val_rmse = float('inf')
+        patience_counter = 0
+        best_weights = None
+        
         for epoch in range(self.epochs):
             # Shuffle training indices
             indices = np.arange(len(ratings))
@@ -84,8 +88,53 @@ class CollaborativeRecommender(BaseRecommender):
                 self.P[u] += self.lr * (err * self.Q[i] - self.reg * self.P[u])
                 self.Q[i] += self.lr * (err * p_temp - self.reg * self.Q[i])
                 
-            rmse = np.sqrt(loss / len(ratings))
-            logger.info(f"Epoch {epoch + 1}/{self.epochs} - Training RMSE: {rmse:.4f}")
+            train_rmse = np.sqrt(loss / len(ratings))
+            
+            # Learning rate decay
+            self.lr *= 0.90
+            
+            # Early Stopping Check if val_data is provided
+            if val_data:
+                val_loss = 0.0
+                val_count = 0
+                for row in val_data:
+                    u_idx = self.user_to_idx.get(row["user_id"])
+                    i_idx = self.movie_to_idx.get(row["movie_id"])
+                    r_val = row["rating"]
+                    if u_idx is not None and i_idx is not None:
+                        pred_val = self.global_mean + self.user_biases[u_idx] + self.item_biases[i_idx] + np.dot(self.P[u_idx], self.Q[i_idx])
+                        val_loss += (r_val - pred_val) ** 2
+                        val_count += 1
+                        
+                if val_count > 0:
+                    val_rmse = np.sqrt(val_loss / val_count)
+                    logger.info(f"Epoch {epoch + 1}/{self.epochs} - Training RMSE: {train_rmse:.4f}, Val RMSE: {val_rmse:.4f}")
+                    
+                    if val_rmse < best_val_rmse:
+                        best_val_rmse = val_rmse
+                        patience_counter = 0
+                        import copy
+                        best_weights = {
+                            "P": copy.deepcopy(self.P),
+                            "Q": copy.deepcopy(self.Q),
+                            "user_biases": copy.deepcopy(self.user_biases),
+                            "item_biases": copy.deepcopy(self.item_biases)
+                        }
+                    else:
+                        patience_counter += 1
+                        
+                    if patience_counter >= 3:
+                        logger.info(f"Early stopping at epoch {epoch + 1}. Restoring best weights with Val RMSE: {best_val_rmse:.4f}")
+                        if best_weights:
+                            self.P = best_weights["P"]
+                            self.Q = best_weights["Q"]
+                            self.user_biases = best_weights["user_biases"]
+                            self.item_biases = best_weights["item_biases"]
+                        break
+                else:
+                    logger.info(f"Epoch {epoch + 1}/{self.epochs} - Training RMSE: {train_rmse:.4f} (No valid validation data)")
+            else:
+                logger.info(f"Epoch {epoch + 1}/{self.epochs} - Training RMSE: {train_rmse:.4f}")
 
     def predict_rating(self, user_id: int, movie_id: int) -> float:
         """Predicts a rating for a user and movie, falling back to biases or global mean for unseen entities."""
