@@ -4,6 +4,8 @@ import { getTrending } from '../api/movies';
 import { getRecommendations } from '../api/recommendations';
 import { getMe } from '../api/auth';
 import GlassCard from '../components/GlassCard';
+import RatingInsights from '../components/RatingInsights';
+import WatchlistPanel from '../components/WatchlistPanel';
 import { Star, Clock, Calendar, Play } from 'lucide-react';
 
 export default function Home() {
@@ -205,6 +207,14 @@ export default function Home() {
           </div>
         )}
       </section>
+
+      {/* User Dashboard Section */}
+      {user && (
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <RatingInsights />
+          <WatchlistPanel />
+        </section>
+      )}
     </div>
   );
 }
