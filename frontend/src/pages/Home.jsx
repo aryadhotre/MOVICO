@@ -6,6 +6,7 @@ import { getMe } from '../api/auth';
 import GlassCard from '../components/GlassCard';
 import RatingInsights from '../components/RatingInsights';
 import WatchlistPanel from '../components/WatchlistPanel';
+import MovieCard from '../components/MovieCard';
 import { useRating } from '../context/RatingContext';
 import { Star, Clock, Calendar, Play, AlertCircle, X } from 'lucide-react';
 
@@ -54,7 +55,7 @@ export default function Home() {
   }, [ratingVersion]); // re-fetch whenever a rating is submitted
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-20">
       {/* Inline error banner from rating context */}
       {ratingError && (
         <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl">
@@ -68,21 +69,21 @@ export default function Home() {
 
       {/* Hero Section */}
       <section>
-        <div className="mb-5">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-medium text-accent-secondary tracking-wide">
-              {user ? `Good evening, ${user.username}!` : ''}
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-bold text-accent-secondary tracking-wider uppercase">
+              {user ? `Good evening, ${user.username}` : 'Welcome'}
             </span>
             <span className="text-xs text-text-secondary/50">•</span>
-            <span className="text-xs text-text-secondary/60">Deep Recommendations powered by MOVICO AI</span>
+            <span className="text-xs text-text-secondary/80 font-medium">Powered by MOVICO AI</span>
           </div>
-          <h1 className="text-3xl font-bold text-text-primary tracking-tight">
-            What should we <span className="bg-gradient-to-r from-accent-primary to-accent-primaryHover bg-clip-text text-transparent">watch today?</span>
+          <h1 className="text-4xl md:text-6xl font-display text-text-primary tracking-wide uppercase leading-tight drop-shadow-md">
+            What should we <span className="text-accent-gold">watch today?</span>
           </h1>
-          <p className="text-text-secondary/70 text-sm mt-1">Personalized recommendations, just for you, powered by hybrid AI.</p>
+          <p className="text-text-secondary/80 text-sm md:text-base mt-2 max-w-lg">Personalized recommendations, just for you, powered by hybrid AI.</p>
         </div>
 
-        <GlassCard className="relative overflow-hidden flex flex-col md:flex-row min-h-[360px]">
+        <GlassCard className="relative overflow-hidden flex flex-col min-h-[450px] md:min-h-[500px] w-full p-0 shadow-2xl">
           {loadingHero ? (
             <div className="flex-1 bg-white/[0.03] animate-pulse flex items-center justify-center">
               <span className="text-text-secondary/60 text-sm">Loading your personalized pick...</span>
@@ -93,60 +94,62 @@ export default function Home() {
             </div>
           ) : heroMovie ? (
             <>
-              {/* Backdrop Background with Gradient Overlay */}
+              {/* Widescreen Backdrop */}
               <div 
-                className="absolute inset-0 bg-cover bg-center z-0 opacity-30"
+                className="absolute inset-0 bg-cover bg-center z-0"
                 style={{ backgroundImage: `url(${heroMovie.backdrop_url || heroMovie.poster_url})` }}
               />
-              <div className="absolute inset-0 bg-gradient-to-r from-[#0B0E14] via-[#0B0E14]/85 to-transparent z-0" />
+              {/* Heavy Cinematic Gradient Overlay */}
+              <div className="absolute inset-0 bg-gradient-to-r from-[#0B0E14] via-[#0B0E14]/80 to-transparent z-0" />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0B0E14] via-transparent to-transparent z-0" />
               
-              <div className="relative z-10 p-8 md:p-10 flex flex-col justify-center flex-1 w-full md:w-1/2">
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="bg-gradient-to-r from-accent-primary to-accent-primaryHover text-white text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wider">
+              <div className="relative z-10 p-8 md:p-14 flex flex-col justify-end flex-1 w-full md:w-2/3 h-full pb-10">
+                <div className="flex items-center gap-2 mb-5">
+                  <span className="bg-accent-gold text-black text-[10px] font-extrabold px-3 py-1.5 rounded-md uppercase tracking-widest shadow-lg shadow-accent-gold/20">
                     Recommended for you
                   </span>
                 </div>
 
-                <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 leading-tight tracking-tight">
+                <h2 className="text-4xl md:text-6xl font-display text-white mb-4 leading-none tracking-wide uppercase drop-shadow-lg">
                   {heroMovie.title}
                 </h2>
                 
-                <div className="flex flex-wrap items-center gap-4 text-sm text-text-secondary/80 mb-5">
-                  <div className="flex items-center gap-1 text-rating font-semibold">
+                <div className="flex flex-wrap items-center gap-5 text-sm text-white/90 mb-6 font-medium drop-shadow-md">
+                  <div className="flex items-center gap-1.5 text-rating font-bold bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm border border-white/10">
                     <Star size={14} className="fill-rating" />
                     <span>{heroMovie.vote_average ? heroMovie.vote_average.toFixed(1) : 'NR'}</span>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Calendar size={14} />
+                  <div className="flex items-center gap-1.5">
+                    <Calendar size={14} className="text-text-secondary" />
                     <span>{heroMovie.release_date ? heroMovie.release_date.substring(0, 4) : 'N/A'}</span>
                   </div>
                   {heroMovie.runtime && (
-                    <div className="flex items-center gap-1">
-                      <Clock size={14} />
+                    <div className="flex items-center gap-1.5">
+                      <Clock size={14} className="text-text-secondary" />
                       <span>{heroMovie.runtime} min</span>
                     </div>
                   )}
                 </div>
 
-                <div className="flex flex-wrap gap-2 mb-6">
+                <div className="flex flex-wrap gap-2 mb-8">
                   {heroMovie.genres && heroMovie.genres.split('|').map(g => (
-                    <span key={g} className="text-[11px] border border-white/[0.12] rounded-full px-3 py-1 bg-white/[0.04] text-text-secondary/90">
+                    <span key={g} className="text-xs border border-white/20 rounded-full px-4 py-1.5 bg-black/40 backdrop-blur-md text-white/90 font-medium">
                       {g}
                     </span>
                   ))}
                 </div>
 
-                <div className="flex flex-wrap gap-3">
+                <div className="flex flex-wrap gap-4">
                   <Link 
                     to="/recommendations" 
-                    className="btn-gradient flex items-center gap-2 text-white px-5 py-2.5 rounded-xl font-semibold text-sm"
+                    className="btn-gold flex items-center justify-center gap-2 py-3.5 px-8 rounded-xl text-black font-extrabold text-sm tracking-wide transition-all shadow-[0_10px_30px_rgba(232,184,75,0.25)]"
                   >
-                    <Play size={16} className="fill-white" />
+                    <Play size={18} className="fill-black" />
                     Get Recommendation
                   </Link>
                   <Link 
                     to="/browse"
-                    className="flex items-center gap-2 bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-white px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200"
+                    className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white px-8 py-3.5 rounded-xl font-bold text-sm transition-all duration-200"
                   >
                     Browse All Movies
                   </Link>
@@ -164,7 +167,7 @@ export default function Home() {
       {/* Trending Section */}
       <section>
         <div className="flex items-center justify-between mb-5">
-          <h2 className="section-header">Trending This Week</h2>
+          <h2 className="section-header">Popular Among Users</h2>
           <Link to="/trending" className="text-accent-primary hover:text-accent-primaryHover text-xs font-semibold transition-colors uppercase tracking-wider">
             View All →
           </Link>
@@ -179,46 +182,9 @@ export default function Home() {
         ) : errorTrending ? (
           <div className="text-red-400/80 p-4 text-sm">{errorTrending}</div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
             {trending.map((movie, index) => (
-              <Link to={`/movies/${movie.id}`} key={movie.id} className="group block">
-                <GlassCard className="h-full flex flex-col p-0 overflow-hidden group-hover:-translate-y-1 transition-transform duration-300">
-                  <div className="relative aspect-[2/3] w-full bg-[#161B26] rounded-t-2xl overflow-hidden">
-                    {movie.poster_url ? (
-                      <img 
-                        src={movie.poster_url} 
-                        alt={movie.title} 
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center p-3 text-center">
-                        <span className="text-text-secondary/40 text-xs">{movie.title}</span>
-                      </div>
-                    )}
-                    
-                    {/* Rank badge */}
-                    <div className="absolute top-2 left-2 w-7 h-7 rounded-lg bg-gradient-to-br from-accent-primary/80 to-accent-primaryHover/80 backdrop-blur-md text-white flex items-center justify-center font-bold text-xs border border-white/20">
-                      {index + 1}
-                    </div>
-                  </div>
-                  
-                  <div className="p-3 flex-1 flex flex-col justify-between">
-                    <div>
-                      <h3 className="font-semibold text-text-primary text-[13px] line-clamp-2 mb-0.5 group-hover:text-accent-primary transition-colors leading-tight">
-                        {movie.title}
-                      </h3>
-                      <p className="text-[11px] text-text-secondary/60">
-                        {movie.release_date ? movie.release_date.substring(0, 4) : ''}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1 text-rating mt-1.5">
-                      <Star size={11} className="fill-rating" />
-                      <span className="text-[11px] font-semibold">{movie.vote_average ? movie.vote_average.toFixed(1) : 'NR'}</span>
-                    </div>
-                  </div>
-                </GlassCard>
-              </Link>
+              <MovieCard key={movie.id} movie={movie} rank={index + 1} />
             ))}
           </div>
         )}
