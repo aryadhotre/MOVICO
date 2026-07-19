@@ -17,30 +17,48 @@
     z-index: 0;
     pointer-events: none;
     background:
-      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(139, 92, 246, 0.12) 0%, transparent 60%),
-      radial-gradient(ellipse 60% 40% at 30% 10%, rgba(59, 130, 246, 0.08) 0%, transparent 50%);
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(139, 92, 246, 0.25) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 30% 10%, rgba(59, 130, 246, 0.15) 0%, transparent 50%);
   }
 
-  /* ── Gradient pill for active nav items ── */
+  /* ── Gradient pill for active nav items (Gold) ── */
   .nav-pill-active {
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.25) 0%, rgba(59, 130, 246, 0.2) 100%);
-    border: 1px solid rgba(139, 92, 246, 0.3);
-    box-shadow: inset 0 0 12px rgba(139, 92, 246, 0.1), 0 0 8px rgba(139, 92, 246, 0.15);
+    background: linear-gradient(135deg, rgba(232, 184, 75, 0.25) 0%, rgba(212, 163, 59, 0.2) 100%);
+    border: 1px solid rgba(232, 184, 75, 0.3);
+    box-shadow: inset 0 0 12px rgba(232, 184, 75, 0.1), 0 0 8px rgba(232, 184, 75, 0.15);
   }
 
-  /* ── Gradient primary button ── */
-  .btn-gradient {
+  /* ── Gradient AI button (Purple/Blue) ── */
+  .btn-ai {
     background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%);
     transition: box-shadow 0.3s ease, transform 0.2s ease;
   }
-  .btn-gradient:hover {
+  .btn-ai:hover {
     box-shadow: 0 0 20px rgba(139, 92, 246, 0.4), 0 4px 12px rgba(59, 130, 246, 0.3);
     transform: translateY(-1px);
   }
-  .btn-gradient:active {
+  .btn-ai:active {
     transform: translateY(0);
   }
-  .btn-gradient:disabled {
+  .btn-ai:disabled {
+    opacity: 0.5;
+    box-shadow: none;
+    transform: none;
+  }
+
+  /* ── Gold primary button ── */
+  .btn-gold {
+    background: linear-gradient(135deg, #E8B84B 0%, #D4A33B 100%);
+    transition: box-shadow 0.3s ease, transform 0.2s ease;
+  }
+  .btn-gold:hover {
+    box-shadow: 0 0 20px rgba(232, 184, 75, 0.4), 0 4px 12px rgba(212, 163, 59, 0.3);
+    transform: translateY(-1px);
+  }
+  .btn-gold:active {
+    transform: translateY(0);
+  }
+  .btn-gold:disabled {
     opacity: 0.5;
     box-shadow: none;
     transform: none;
@@ -56,6 +74,17 @@
 
   /* ── Section headers ── */
   .section-header {
-    @apply text-xl font-bold text-text-primary tracking-tight;
+    font-family: "Bebas Neue", sans-serif;
+    @apply text-2xl tracking-wide text-text-primary uppercase;
+  }
+
+  /* ── Cinematic Slow Pan ── */
+  @keyframes slow-pan {
+    0% { transform: scale(1) translate(0, 0); }
+    50% { transform: scale(1.05) translate(-1%, -1%); }
+    100% { transform: scale(1) translate(0, 0); }
+  }
+  .animate-slow-pan {
+    animation: slow-pan 45s ease-in-out infinite alternate;
   }
 }
