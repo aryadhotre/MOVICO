@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login, register } from '../api/auth';
-import { Film, User, Lock, Mail, AlertCircle, ArrowRight } from 'lucide-react';
-import GlassCard from '../components/GlassCard';
+import { User, Lock, Mail, AlertCircle, ArrowRight } from 'lucide-react';
+import Logo from '../components/Logo';
 
 export default function Login() {
   const [isRegistering, setIsRegistering] = useState(false);
@@ -33,109 +33,144 @@ export default function Login() {
     }
   };
 
+  // Sample backdrops for the collage
+  const backdrops = [
+    'https://image.tmdb.org/t/p/original/8ZTVqvKdQ8emSGUOMJsS4VOWHpG.jpg', // Inception
+    'https://image.tmdb.org/t/p/original/rAiYTfKGqDCRIIqo664sY9XZIvQ.jpg', // Interstellar
+    'https://image.tmdb.org/t/p/original/xJHokMbljvjEVAZS3xNCi30nGR.jpg', // Dune
+    'https://image.tmdb.org/t/p/original/7RyHsO4yDXtBv1zUU3mTpHeQ0d5.jpg', // Avengers
+  ];
+
   return (
-    <div className="min-h-screen bg-[#0B0E14] flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Ambient glow orbs */}
-      <div className="absolute top-[20%] left-[30%] w-[500px] h-[500px] bg-accent-primary/[0.12] rounded-full blur-[150px] pointer-events-none" />
-      <div className="absolute bottom-[20%] right-[25%] w-[400px] h-[400px] bg-accent-primaryHover/[0.08] rounded-full blur-[130px] pointer-events-none" />
-      
-      <div className="w-full max-w-md z-10">
-        <div className="text-center mb-8 flex flex-col items-center">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-accent-primary to-accent-primaryHover flex items-center justify-center shadow-[0_0_30px_rgba(139,92,246,0.4)] mb-5">
-            <Film size={26} className="text-white" />
+    <div className="h-screen w-full bg-black flex flex-col font-sans">
+      {/* Top Letterbox Bar */}
+      <div className="h-7 w-full bg-black shrink-0 z-50"></div>
+
+      {/* Main Split Screen */}
+      <div className="flex-1 flex overflow-hidden relative bg-[#0B0E14]">
+        
+        {/* Left Side: Cinematic Backdrop Collage (Hidden on small screens) */}
+        <div className="hidden lg:block w-[55%] relative overflow-hidden bg-black">
+          <div className="absolute inset-0 grid grid-cols-2 grid-rows-2 gap-1 opacity-40 animate-slow-pan scale-110 blur-[2px]">
+            {backdrops.map((src, i) => (
+              <div 
+                key={i} 
+                className="w-full h-full bg-cover bg-center"
+                style={{ backgroundImage: `url(${src})` }}
+              />
+            ))}
           </div>
-          <h1 className="text-3xl font-bold tracking-[0.2em] text-text-primary mb-1">MOVICO</h1>
-          <p className="text-text-secondary/60 text-sm">Your personalized movie experience.</p>
+          {/* Gradients to fade into the right side and darken */}
+          <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-black/40 to-[#0B0E14] z-10" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0B0E14] via-transparent to-[#0B0E14] opacity-50 z-10" />
         </div>
 
-        <GlassCard className="p-8">
-          <h2 className="text-xl font-bold text-white mb-1">
-            {isRegistering ? 'Create an account' : 'Welcome back'}
-          </h2>
-          <p className="text-text-secondary/50 text-sm mb-6">
-            {isRegistering ? 'Sign up to get personalized recommendations.' : 'Sign in to continue to your dashboard.'}
-          </p>
+        {/* Right Side: Form Panel */}
+        <div className="w-full lg:w-[45%] flex flex-col justify-center p-8 md:p-16 lg:p-20 relative z-20 overflow-y-auto">
+          {/* Logo */}
+          <div className="absolute top-8 left-8 md:top-12 md:left-16 lg:top-16 lg:left-20">
+            <Logo className="text-4xl md:text-5xl" />
+          </div>
 
-          {error && (
-            <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl mb-5">
-              <AlertCircle size={16} className="shrink-0" />
-              <span className="text-sm">{error}</span>
-            </div>
-          )}
+          <div className="w-full max-w-sm mt-16 lg:mt-8">
+            <h1 className="font-display text-5xl md:text-6xl text-white mb-2 uppercase tracking-wide">
+              {isRegistering ? 'Join the Premiere' : 'Welcome Back'}
+            </h1>
+            <p className="text-text-secondary text-sm mb-10 font-medium">
+              {isRegistering 
+                ? 'Sign up for a personalized, AI-curated cinematic experience.' 
+                : 'Sign in to access your curated dashboard and watchlist.'}
+            </p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-[11px] font-semibold text-text-secondary/70 uppercase tracking-wider mb-2">Username</label>
-              <div className="relative">
-                <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/40" />
-                <input
-                  type="text"
-                  required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-text-secondary/30 focus:outline-none focus:border-accent-primary/40 focus:bg-white/[0.05] transition-all duration-200"
-                  placeholder="Enter your username"
-                />
-              </div>
-            </div>
-
-            {isRegistering && (
-              <div>
-                <label className="block text-[11px] font-semibold text-text-secondary/70 uppercase tracking-wider mb-2">Email</label>
-                <div className="relative">
-                  <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/40" />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-text-secondary/30 focus:outline-none focus:border-accent-primary/40 focus:bg-white/[0.05] transition-all duration-200"
-                    placeholder="Enter your email"
-                  />
-                </div>
+            {error && (
+              <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl mb-6">
+                <AlertCircle size={16} className="shrink-0" />
+                <span className="text-sm font-medium">{error}</span>
               </div>
             )}
 
-            <div>
-              <label className="block text-[11px] font-semibold text-text-secondary/70 uppercase tracking-wider mb-2">Password</label>
-              <div className="relative">
-                <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/40" />
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-text-secondary/30 focus:outline-none focus:border-accent-primary/40 focus:bg-white/[0.05] transition-all duration-200"
-                  placeholder="Enter your password"
-                />
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Username</label>
+                <div className="relative">
+                  <User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary/50" />
+                  <input
+                    type="text"
+                    required
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl py-3 pl-12 pr-4 text-sm text-white placeholder:text-text-secondary/30 focus:outline-none focus:border-accent-gold/50 focus:bg-white/[0.05] focus:ring-1 focus:ring-accent-gold/20 transition-all duration-200 font-medium"
+                    placeholder="Enter your username"
+                  />
+                </div>
               </div>
+
+              {isRegistering && (
+                <div>
+                  <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Email</label>
+                  <div className="relative">
+                    <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary/50" />
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl py-3 pl-12 pr-4 text-sm text-white placeholder:text-text-secondary/30 focus:outline-none focus:border-accent-gold/50 focus:bg-white/[0.05] focus:ring-1 focus:ring-accent-gold/20 transition-all duration-200 font-medium"
+                      placeholder="Enter your email"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Password</label>
+                <div className="relative">
+                  <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary/50" />
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl py-3 pl-12 pr-4 text-sm text-white placeholder:text-text-secondary/30 focus:outline-none focus:border-accent-gold/50 focus:bg-white/[0.05] focus:ring-1 focus:ring-accent-gold/20 transition-all duration-200 font-medium"
+                    placeholder="Enter your password"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full btn-gold flex items-center justify-center gap-2 text-black font-bold text-sm tracking-wide py-3.5 rounded-xl mt-8 disabled:opacity-50"
+              >
+                {loading ? 'PROCESSING...' : (isRegistering ? 'CREATE ACCOUNT' : 'SIGN IN')}
+                {!loading && <ArrowRight size={18} />}
+              </button>
+            </form>
+
+            <div className="mt-8">
+              <button
+                onClick={() => {
+                  setIsRegistering(!isRegistering);
+                  setError('');
+                }}
+                className="text-sm font-medium text-text-secondary/70 hover:text-accent-gold transition-colors"
+              >
+                {isRegistering 
+                  ? 'Already have an account? Sign In' 
+                  : "Don't have an account? Sign Up"}
+              </button>
             </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full btn-gradient flex items-center justify-center gap-2 text-white font-semibold py-3 rounded-xl mt-6 text-sm"
-            >
-              {loading ? 'Processing...' : (isRegistering ? 'Create Account' : 'Sign In')}
-              {!loading && <ArrowRight size={16} />}
-            </button>
-          </form>
-
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => {
-                setIsRegistering(!isRegistering);
-                setError('');
-              }}
-              className="text-sm text-text-secondary/60 hover:text-white transition-colors"
-            >
-              {isRegistering 
-                ? 'Already have an account? Sign In' 
-                : "Don't have an account? Sign Up"}
-            </button>
           </div>
-        </GlassCard>
+        </div>
+
+        {/* Mobile-only background overlay since left panel is hidden */}
+        <div className="block lg:hidden absolute inset-0 z-0 bg-cover bg-center opacity-10 blur-sm animate-slow-pan"
+             style={{ backgroundImage: `url(${backdrops[0]})` }} />
+        <div className="block lg:hidden absolute inset-0 z-10 bg-[#0B0E14]/90" />
       </div>
+
+      {/* Bottom Letterbox Bar */}
+      <div className="h-7 w-full bg-black shrink-0 z-50"></div>
     </div>
   );
 }
