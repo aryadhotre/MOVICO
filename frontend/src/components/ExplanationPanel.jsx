@@ -110,8 +110,8 @@ export default function ExplanationPanel({ movie }) {
               </span>
             </div>
             
-            <div className="flex flex-col items-center text-accent-primary px-2">
-              <div className="bg-accent-primary/20 border border-accent-primary/30 px-3 py-1 rounded-full text-xs font-bold mb-2 shadow-[0_0_15px_rgba(139,92,246,0.2)]">
+            <div className="flex flex-col items-center text-accent-ai px-2">
+              <div className="bg-accent-ai/20 border border-accent-ai/30 px-3 py-1 rounded-full text-xs font-bold mb-2 shadow-[0_0_15px_rgba(139,92,246,0.2)]">
                 {explanation.similarity_score ? (explanation.similarity_score * 100).toFixed(0) : 0}% Match
               </div>
               <ArrowRight size={24} />
@@ -161,7 +161,7 @@ function MatchBar({ label, score = 0 }) {
       </div>
       <div className="w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
         <div 
-          className="h-full bg-gradient-to-r from-accent-primary to-accent-secondary rounded-full"
+          className="h-full bg-gradient-to-r from-accent-ai to-accent-secondary rounded-full"
           style={{ width: `${percentage}%` }}
         ></div>
       </div>
