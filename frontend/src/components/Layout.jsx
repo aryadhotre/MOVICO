@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { getMe } from '../api/auth';
-import SystemStatus from './SystemStatus';
+import Logo from './Logo';
 import { 
   Film, Home, Compass, TrendingUp, Sparkles, Bookmark, 
   Clock, Tag, Star, User, Settings, LogOut, Search, ChevronDown
@@ -58,12 +58,8 @@ export default function Layout() {
 
       {/* Left Sidebar */}
       <aside className="w-[260px] bg-white/[0.03] backdrop-blur-2xl border-r border-white/[0.06] flex flex-col h-full z-10 shrink-0 relative">
-        {/* Logo */}
-        <div className="p-6 pb-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-accent-primary to-accent-primaryHover flex items-center justify-center shadow-[0_0_20px_rgba(139,92,246,0.4)]">
-            <Film size={18} className="text-white" />
-          </div>
-          <span className="text-lg font-bold tracking-[0.2em] text-text-primary">MOVICO</span>
+        <div className="p-6 pb-4">
+          <Logo className="text-2xl" />
         </div>
 
         {/* Navigation */}
@@ -87,8 +83,7 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* System Status */}
-        <SystemStatus />
+
 
         {/* User Card */}
         <div className="p-3 border-t border-white/[0.06]">
