@@ -1,5 +1,6 @@
 import time
 import logging
+import asyncio
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.database.models import RecommendationHistory, Movie
@@ -48,7 +49,7 @@ class RecommenderCoordinator:
                 # Generate explanations on-the-fly for the page returned if requested
                 explanations = {}
                 if include_explanations and rec_ids:
-                    explanations = self.hybrid_model._generate_explanations(user_id, rec_ids, db)
+                    explanations = await asyncio.to_thread(self.hybrid_model._generate_explanations, user_id, rec_ids, db)
                 
                 formatted_movies = []
                 for movie in movie_objs:
@@ -67,10 +68,11 @@ class RecommenderCoordinator:
 
         # 2. Cache Miss: Execute Recommendation Models
         logger.info(f"Generating live recommendations for user {user_id}...")
-        recs = self.hybrid_model.recommend(
-            user_id, 
-            top_n=limit * 2, 
-            db=db, 
+        recs = await asyncio.to_thread(
+            self.hybrid_model.recommend,
+            user_id,
+            top_n=limit * 2,
+            db=db,
             include_explanations=include_explanations
         ) # Fetch double size for buffer
         
