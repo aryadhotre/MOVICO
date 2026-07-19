@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # Training Configuration
     # For large datasets (25M+), we sample a subset for SVD training to keep memory & time manageable.
     # Set to 0 to use all ratings (warning: 33M ratings SVD takes hours on CPU).
-    TRAINING_SAMPLE_SIZE: int = Field(default=1_000_000)
+    TRAINING_SAMPLE_SIZE: int = Field(default=0)
     SVD_EPOCHS: int = Field(default=20)
     SVD_FACTORS: int = Field(default=100)
 
