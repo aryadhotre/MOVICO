@@ -32,7 +32,7 @@ function MovieCard({ movie, index }) {
   return (
     <Link to={`/movies/${movie.id}`} className="group block">
       <GlassCard className="h-full flex flex-col p-0 overflow-hidden group-hover:-translate-y-2 transition-transform duration-300">
-        <div className="relative aspect-[2/3] w-full bg-gray-900">
+        <div className="relative aspect-[2/3] w-full bg-[#161B26] rounded-t-2xl overflow-hidden">
           {movie.poster_url ? (
             <img
               src={movie.poster_url}
@@ -46,13 +46,13 @@ function MovieCard({ movie, index }) {
             </div>
           )}
           {/* Rank badge */}
-          <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-white w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs border border-white/10">
+          <div className="absolute top-2 left-2 w-7 h-7 rounded-lg bg-gradient-to-br from-accent-primary/80 to-accent-primaryHover/80 backdrop-blur-md text-white flex items-center justify-center font-bold text-xs border border-white/20">
             {index + 1}
           </div>
           {/* Match percentage */}
           {matchPct !== null && (
-            <div className="absolute top-2 right-2 bg-accent-primary/80 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-              {matchPct}%
+            <div className="absolute top-2 right-2 badge-match">
+              {matchPct}% Match
             </div>
           )}
           {/* Gradient overlay */}
@@ -151,7 +151,7 @@ export default function Recommendations() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-text-primary flex items-center gap-3">
+          <h1 className="text-3xl font-bold text-text-primary flex items-center gap-3 tracking-tight">
             <Sparkles className="text-accent-primary" />
             Top Picks For You
           </h1>
@@ -165,7 +165,7 @@ export default function Recommendations() {
           <button
             onClick={() => fetchRecs(true)}
             disabled={refreshing}
-            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
+            className="btn-gradient flex items-center gap-2 text-white px-4 py-2 rounded-xl text-sm font-semibold"
           >
             <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
             {refreshing ? 'Refreshing...' : 'Refresh Picks'}
@@ -192,7 +192,7 @@ export default function Recommendations() {
 
       {/* Movie Grid */}
       {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {Array.from({ length: 12 }).map((_, i) => (
             <GlassCard key={i} className="aspect-[2/3] animate-pulse bg-white/5 p-0" />
           ))}
@@ -206,7 +206,7 @@ export default function Recommendations() {
           <p className="text-text-secondary text-sm">Rate a few movies and come back — your AI picks will appear here.</p>
         </GlassCard>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {data.movies.map((movie, index) => (
             <MovieCard key={movie.id} movie={movie} index={index} />
           ))}
@@ -216,7 +216,7 @@ export default function Recommendations() {
       {/* Explainability for first movie */}
       {!loading && data?.movies?.length > 0 && data.movies[0].explanation && (
         <div>
-          <h2 className="text-xl font-bold text-text-primary mb-5">AI Insight — Top Pick</h2>
+          <h2 className="section-header mb-5">AI Insight — Top Pick</h2>
           <ExplanationPanel movie={data.movies[0]} />
         </div>
       )}

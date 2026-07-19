@@ -8,7 +8,7 @@ function MovieCard({ movie }) {
   return (
     <Link to={`/movies/${movie.id}`} className="group block h-full">
       <GlassCard className="h-full flex flex-col p-0 overflow-hidden group-hover:-translate-y-2 transition-transform duration-300">
-        <div className="relative aspect-[2/3] w-full bg-gray-900">
+        <div className="relative aspect-[2/3] w-full bg-[#161B26] rounded-t-2xl overflow-hidden">
           {movie.poster_url ? (
             <img src={movie.poster_url} alt={movie.title} className="w-full h-full object-cover" loading="lazy" />
           ) : (

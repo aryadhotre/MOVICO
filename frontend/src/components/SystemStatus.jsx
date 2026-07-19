@@ -43,8 +43,8 @@ export default function SystemStatus() {
   ];
 
   return (
-    <div className="px-4 pb-4">
-      <div className="bg-black/20 border border-white/10 rounded-xl p-3 space-y-2">
+    <div className="px-3 pb-3">
+      <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-semibold text-text-secondary uppercase tracking-widest">
             System
@@ -59,12 +59,12 @@ export default function SystemStatus() {
         </div>
         {items.map((item) => (
           <div key={item.label} className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full shrink-0 ${dot(item.ok)}`} />
-            <span className="text-text-secondary">{item.icon}</span>
-            <span className="text-xs text-text-secondary flex-1">{item.label}</span>
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot(item.ok)}`} />
+            <span className="text-text-secondary/70">{item.icon}</span>
+            <span className="text-[11px] text-text-secondary flex-1">{item.label}</span>
             <span
               className={`text-[10px] font-medium ${
-                item.ok ? 'text-green-400' : 'text-red-400'
+                item.ok ? 'text-green-400/80' : 'text-red-400/80'
               }`}
             >
               {item.ok ? 'OK' : 'DOWN'}

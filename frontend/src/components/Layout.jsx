@@ -19,7 +19,6 @@ export default function Layout() {
         const userData = await getMe();
         setUser(userData);
       } catch (err) {
-        // user not logged in or token invalid
         console.error("Failed to get user:", err);
       }
     }
@@ -42,37 +41,43 @@ export default function Layout() {
   };
 
   const navItems = [
-    { name: 'Home', path: '/', icon: <Home size={20} /> },
-    { name: 'Browse', path: '/browse', icon: <Compass size={20} /> },
-    { name: 'Trending', path: '/trending', icon: <TrendingUp size={20} /> },
-    { name: 'Recommendations', path: '/recommendations', icon: <Sparkles size={20} /> },
-    { name: 'Genres', path: '/genres', icon: <Tag size={20} /> },
-    { name: 'Watchlist', path: '/watchlist', icon: <Bookmark size={20} /> },
-    { name: 'History', path: '/history', icon: <Clock size={20} /> },
-    { name: 'Ratings', path: '/ratings', icon: <Star size={20} /> },
+    { name: 'Home', path: '/', icon: <Home size={18} /> },
+    { name: 'Browse Movies', path: '/browse', icon: <Compass size={18} /> },
+    { name: 'Trending', path: '/trending', icon: <TrendingUp size={18} /> },
+    { name: 'Recommendations', path: '/recommendations', icon: <Sparkles size={18} /> },
+    { name: 'Watchlist', path: '/watchlist', icon: <Bookmark size={18} /> },
+    { name: 'History', path: '/history', icon: <Clock size={18} /> },
+    { name: 'Genres', path: '/genres', icon: <Tag size={18} /> },
+    { name: 'My Ratings', path: '/ratings', icon: <Star size={18} /> },
   ];
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden relative">
+      {/* Ambient background glow */}
+      <div className="ambient-glow" />
+
       {/* Left Sidebar */}
-      <aside className="w-[260px] bg-white/5 backdrop-blur-xl border-r border-white/10 flex flex-col h-full z-10 shrink-0">
-        <div className="p-6 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-primary to-accent-primaryHover flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.5)]">
+      <aside className="w-[260px] bg-white/[0.03] backdrop-blur-2xl border-r border-white/[0.06] flex flex-col h-full z-10 shrink-0 relative">
+        {/* Logo */}
+        <div className="p-6 pb-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-accent-primary to-accent-primaryHover flex items-center justify-center shadow-[0_0_20px_rgba(139,92,246,0.4)]">
             <Film size={18} className="text-white" />
           </div>
-          <span className="text-xl font-bold tracking-widest text-text-primary">MOVICO</span>
+          <span className="text-lg font-bold tracking-[0.2em] text-text-primary">MOVICO</span>
         </div>
 
-        <nav className="flex-1 px-4 py-4 space-y-2 overflow-y-auto">
+        {/* Navigation */}
+        <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
           {navItems.map((item) => (
             <NavLink
               key={item.name}
               to={item.path}
+              end={item.path === '/'}
               className={({ isActive }) => 
-                `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 font-medium ${
+                `flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-300 text-[13px] font-medium ${
                   isActive 
-                    ? 'bg-accent-primary/20 text-accent-primary shadow-[inset_0_0_10px_rgba(139,92,246,0.1)]' 
-                    : 'text-text-secondary hover:bg-white/5 hover:text-text-primary'
+                    ? 'nav-pill-active text-accent-primary' 
+                    : 'text-text-secondary hover:bg-white/[0.04] hover:text-text-primary'
                 }`
               }
             >
@@ -86,16 +91,16 @@ export default function Layout() {
         <SystemStatus />
 
         {/* User Card */}
-        <div className="p-4 pt-0 border-t border-white/10">
-          <div className="flex items-center gap-3 p-2 bg-black/20 rounded-xl mt-4">
-            <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center shrink-0">
-              <User size={20} className="text-text-secondary" />
+        <div className="p-3 border-t border-white/[0.06]">
+          <div className="flex items-center gap-3 p-2.5 bg-white/[0.03] border border-white/[0.06] rounded-xl">
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-accent-primary/30 to-accent-primaryHover/20 flex items-center justify-center shrink-0 border border-white/10">
+              <User size={16} className="text-accent-primary" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-text-primary truncate">
                 {user ? user.username : 'Guest'}
               </p>
-              <p className="text-xs text-text-secondary truncate">
+              <p className="text-[11px] text-text-secondary truncate">
                 {user ? user.email : 'Not logged in'}
               </p>
             </div>
@@ -104,40 +109,40 @@ export default function Layout() {
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 relative">
+      <div className="flex-1 flex flex-col min-w-0 relative z-[1]">
         {/* Top Navbar */}
-        <header className="h-16 bg-white/5 backdrop-blur-md border-b border-white/10 flex items-center justify-between px-8 z-20 shrink-0">
-          <div className="w-96 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
+        <header className="h-14 bg-white/[0.03] backdrop-blur-xl border-b border-white/[0.06] flex items-center justify-between px-6 z-20 shrink-0">
+          <div className="w-80 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/60" size={16} />
             <input 
               type="text" 
-              placeholder="Search movies, genres, actors..." 
-              className="w-full bg-black/20 border border-white/10 rounded-full py-2 pl-10 pr-4 text-sm text-text-primary focus:outline-none focus:border-accent-primary/50 transition-colors"
+              placeholder="Search movies, genres, people..." 
+              className="w-full bg-white/[0.04] border border-white/[0.06] rounded-full py-2 pl-10 pr-4 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-accent-primary/40 focus:bg-white/[0.06] transition-all duration-200"
             />
           </div>
 
           <div className="relative" ref={dropdownRef}>
             <button 
               onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="flex items-center gap-2 hover:bg-white/5 px-3 py-1.5 rounded-full transition-colors"
+              className="flex items-center gap-2 hover:bg-white/[0.04] px-3 py-1.5 rounded-full transition-colors"
             >
-              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
-                <User size={16} className="text-text-primary" />
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-primary/30 to-accent-primaryHover/20 flex items-center justify-center border border-white/10">
+                <User size={14} className="text-accent-primary" />
               </div>
-              <ChevronDown size={16} className="text-text-secondary" />
+              <ChevronDown size={14} className="text-text-secondary" />
             </button>
 
             {dropdownOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-[#121620] border border-white/10 rounded-xl shadow-2xl py-1 z-30">
-                <NavLink to="/profile" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-text-secondary hover:bg-white/5 hover:text-text-primary">
-                  <User size={16} /> Profile
+              <div className="absolute right-0 mt-2 w-48 bg-[#121620]/95 backdrop-blur-xl border border-white/[0.08] rounded-xl shadow-2xl py-1 z-30">
+                <NavLink to="/profile" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 px-4 py-2.5 text-sm text-text-secondary hover:bg-white/[0.04] hover:text-text-primary transition-colors">
+                  <User size={14} /> Profile
                 </NavLink>
-                <NavLink to="/settings" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 px-4 py-2 text-sm text-text-secondary hover:bg-white/5 hover:text-text-primary">
-                  <Settings size={16} /> Settings
+                <NavLink to="/settings" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 px-4 py-2.5 text-sm text-text-secondary hover:bg-white/[0.04] hover:text-text-primary transition-colors">
+                  <Settings size={14} /> Settings
                 </NavLink>
-                <div className="h-px bg-white/10 my-1"></div>
-                <button onClick={handleLogout} className="w-full flex items-center gap-2 px-4 py-2 text-sm text-text-secondary hover:bg-white/5 hover:text-red-400">
-                  <LogOut size={16} /> Logout
+                <div className="h-px bg-white/[0.06] my-1"></div>
+                <button onClick={handleLogout} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-text-secondary hover:bg-white/[0.04] hover:text-red-400 transition-colors">
+                  <LogOut size={14} /> Logout
                 </button>
               </div>
             )}
@@ -145,7 +150,7 @@ export default function Layout() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto p-8 relative z-0">
+        <main className="flex-1 overflow-auto p-6 relative z-0">
           <Outlet />
         </main>
       </div>

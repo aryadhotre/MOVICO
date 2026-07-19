@@ -35,42 +35,45 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-[#0B0E14] flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background aesthetics */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-accent-primary/20 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-[120px] pointer-events-none" />
+      {/* Ambient glow orbs */}
+      <div className="absolute top-[20%] left-[30%] w-[500px] h-[500px] bg-accent-primary/[0.12] rounded-full blur-[150px] pointer-events-none" />
+      <div className="absolute bottom-[20%] right-[25%] w-[400px] h-[400px] bg-accent-primaryHover/[0.08] rounded-full blur-[130px] pointer-events-none" />
       
       <div className="w-full max-w-md z-10">
         <div className="text-center mb-8 flex flex-col items-center">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent-primary to-accent-primaryHover flex items-center justify-center shadow-[0_0_20px_rgba(139,92,246,0.5)] mb-4">
-            <Film size={24} className="text-white" />
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-accent-primary to-accent-primaryHover flex items-center justify-center shadow-[0_0_30px_rgba(139,92,246,0.4)] mb-5">
+            <Film size={26} className="text-white" />
           </div>
-          <h1 className="text-3xl font-bold tracking-widest text-text-primary mb-2">MOVICO</h1>
-          <p className="text-text-secondary text-sm">Your personalized movie experience.</p>
+          <h1 className="text-3xl font-bold tracking-[0.2em] text-text-primary mb-1">MOVICO</h1>
+          <p className="text-text-secondary/60 text-sm">Your personalized movie experience.</p>
         </div>
 
         <GlassCard className="p-8">
-          <h2 className="text-2xl font-bold text-white mb-6">
+          <h2 className="text-xl font-bold text-white mb-1">
             {isRegistering ? 'Create an account' : 'Welcome back'}
           </h2>
+          <p className="text-text-secondary/50 text-sm mb-6">
+            {isRegistering ? 'Sign up to get personalized recommendations.' : 'Sign in to continue to your dashboard.'}
+          </p>
 
           {error && (
-            <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg mb-6">
-              <AlertCircle size={18} className="shrink-0" />
+            <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl mb-5">
+              <AlertCircle size={16} className="shrink-0" />
               <span className="text-sm">{error}</span>
             </div>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">Username</label>
+              <label className="block text-[11px] font-semibold text-text-secondary/70 uppercase tracking-wider mb-2">Username</label>
               <div className="relative">
-                <User size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+                <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/40" />
                 <input
                   type="text"
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full bg-black/20 border border-white/10 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-accent-primary transition-colors"
+                  className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-text-secondary/30 focus:outline-none focus:border-accent-primary/40 focus:bg-white/[0.05] transition-all duration-200"
                   placeholder="Enter your username"
                 />
               </div>
@@ -78,15 +81,15 @@ export default function Login() {
 
             {isRegistering && (
               <div>
-                <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">Email</label>
+                <label className="block text-[11px] font-semibold text-text-secondary/70 uppercase tracking-wider mb-2">Email</label>
                 <div className="relative">
-                  <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+                  <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/40" />
                   <input
                     type="email"
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-black/20 border border-white/10 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-accent-primary transition-colors"
+                    className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-text-secondary/30 focus:outline-none focus:border-accent-primary/40 focus:bg-white/[0.05] transition-all duration-200"
                     placeholder="Enter your email"
                   />
                 </div>
@@ -94,15 +97,15 @@ export default function Login() {
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-text-secondary uppercase tracking-wider mb-2">Password</label>
+              <label className="block text-[11px] font-semibold text-text-secondary/70 uppercase tracking-wider mb-2">Password</label>
               <div className="relative">
-                <Lock size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
+                <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/40" />
                 <input
                   type="password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-black/20 border border-white/10 rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-accent-primary transition-colors"
+                  className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl py-2.5 pl-10 pr-4 text-sm text-white placeholder:text-text-secondary/30 focus:outline-none focus:border-accent-primary/40 focus:bg-white/[0.05] transition-all duration-200"
                   placeholder="Enter your password"
                 />
               </div>
@@ -111,10 +114,10 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 bg-accent-primary hover:bg-accent-primaryHover text-white font-semibold py-3 rounded-lg transition-colors mt-6 disabled:opacity-50"
+              className="w-full btn-gradient flex items-center justify-center gap-2 text-white font-semibold py-3 rounded-xl mt-6 text-sm"
             >
-              {loading ? 'Processing...' : (isRegistering ? 'Sign Up' : 'Sign In')}
-              {!loading && <ArrowRight size={18} />}
+              {loading ? 'Processing...' : (isRegistering ? 'Create Account' : 'Sign In')}
+              {!loading && <ArrowRight size={16} />}
             </button>
           </form>
 
@@ -124,7 +127,7 @@ export default function Login() {
                 setIsRegistering(!isRegistering);
                 setError('');
               }}
-              className="text-sm text-text-secondary hover:text-white transition-colors"
+              className="text-sm text-text-secondary/60 hover:text-white transition-colors"
             >
               {isRegistering 
                 ? 'Already have an account? Sign In' 
