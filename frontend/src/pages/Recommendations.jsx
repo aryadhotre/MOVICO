@@ -24,60 +24,7 @@ function RecommendationTypeBadge({ type }) {
   );
 }
 
-function MovieCard({ movie, index }) {
-  const matchPct = movie.explanation?.similarity_score
-    ? Math.round(movie.explanation.similarity_score * 100)
-    : null;
-
-  return (
-    <Link to={`/movies/${movie.id}`} className="group block">
-      <GlassCard className="h-full flex flex-col p-0 overflow-hidden group-hover:-translate-y-2 transition-transform duration-300">
-        <div className="relative aspect-[2/3] w-full bg-[#161B26] rounded-t-2xl overflow-hidden">
-          {movie.poster_url ? (
-            <img
-              src={movie.poster_url}
-              alt={movie.title}
-              className="w-full h-full object-cover"
-              loading="lazy"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-text-secondary text-xs text-center p-4">
-              No Poster
-            </div>
-          )}
-          {/* Rank badge */}
-          <div className="absolute top-2 left-2 w-7 h-7 rounded-lg bg-gradient-to-br from-accent-primary/80 to-accent-primaryHover/80 backdrop-blur-md text-white flex items-center justify-center font-bold text-xs border border-white/20">
-            {index + 1}
-          </div>
-          {/* Match percentage */}
-          {matchPct !== null && (
-            <div className="absolute top-2 right-2 badge-match">
-              {matchPct}% Match
-            </div>
-          )}
-          {/* Gradient overlay */}
-          <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/70 to-transparent" />
-        </div>
-        <div className="p-3 flex-1 flex flex-col gap-1">
-          <h3 className="font-semibold text-text-primary text-sm line-clamp-2 group-hover:text-accent-primary transition-colors">
-            {movie.title}
-          </h3>
-          <div className="flex items-center justify-between mt-auto pt-1">
-            <span className="text-xs text-text-secondary">
-              {movie.release_date ? movie.release_date.substring(0, 4) : ''}
-            </span>
-            {movie.vote_average > 0 && (
-              <div className="flex items-center gap-1 text-rating text-xs font-medium">
-                <Star size={11} className="fill-rating" />
-                {movie.vote_average.toFixed(1)}
-              </div>
-            )}
-          </div>
-        </div>
-      </GlassCard>
-    </Link>
-  );
-}
+import MovieCard from '../components/MovieCard';
 
 export default function Recommendations() {
   const { ratingVersion, error: ratingError, clearError } = useRating();
@@ -137,7 +84,7 @@ export default function Recommendations() {
   useEffect(() => { fetchRecs(false); }, [fetchRecs, ratingVersion]); // re-fetch when rating version bumps
 
   return (
-    <div className="max-w-7xl mx-auto space-y-10">
+    <div className="max-w-7xl mx-auto space-y-16">
       {/* Inline error banner from rating context */}
       {ratingError && (
         <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl">
@@ -165,7 +112,7 @@ export default function Recommendations() {
           <button
             onClick={() => fetchRecs(true)}
             disabled={refreshing}
-            className="btn-gradient flex items-center gap-2 text-white px-4 py-2 rounded-xl text-sm font-semibold"
+            className="btn-gold flex items-center gap-2 text-black px-4 py-2 rounded-xl text-sm font-semibold"
           >
             <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
             {refreshing ? 'Refreshing...' : 'Refresh Picks'}
@@ -206,10 +153,18 @@ export default function Recommendations() {
           <p className="text-text-secondary text-sm">Rate a few movies and come back — your AI picks will appear here.</p>
         </GlassCard>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {data.movies.map((movie, index) => (
-            <MovieCard key={movie.id} movie={movie} index={index} />
-          ))}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6 grid-flow-dense">
+          {data.movies.map((movie, index) => {
+            const matchPct = movie.explanation?.similarity_score
+              ? Math.round(movie.explanation.similarity_score * 100)
+              : null;
+            const isTopPick = index === 0;
+            return (
+              <div key={movie.id} className={isTopPick ? 'col-span-2 row-span-2 md:col-span-2 md:row-span-2' : 'col-span-1 row-span-1'}>
+                <MovieCard movie={movie} rank={index + 1} matchPct={matchPct} />
+              </div>
+            );
+          })}
         </div>
       )}
 
