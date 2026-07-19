@@ -1,4 +1,4 @@
-export const Home = () => <div className="p-8"><h1 className="text-2xl font-bold">Home</h1></div>;
+export { default as Home } from './Home';
 export const Browse = () => <div className="p-8"><h1 className="text-2xl font-bold">Browse</h1></div>;
 export const Trending = () => <div className="p-8"><h1 className="text-2xl font-bold">Trending</h1></div>;
 export const Recommendations = () => <div className="p-8"><h1 className="text-2xl font-bold">Recommendations</h1></div>;
