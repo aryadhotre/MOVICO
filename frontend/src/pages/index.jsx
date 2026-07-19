@@ -2,7 +2,7 @@ export { default as Home } from './Home';
 export { default as Recommendations } from './Recommendations';
 export { default as Ratings } from './Ratings';
 export { default as Watchlist } from './Watchlist';
-export const Browse = () => <div className="p-8"><h1 className="text-2xl font-bold">Browse</h1></div>;
+export { default as Browse } from './Browse';
 export const Trending = () => <div className="p-8"><h1 className="text-2xl font-bold">Trending</h1></div>;
 export const History = () => <div className="p-8"><h1 className="text-2xl font-bold">History</h1></div>;
 export const Genres = () => <div className="p-8"><h1 className="text-2xl font-bold">Genres</h1></div>;
