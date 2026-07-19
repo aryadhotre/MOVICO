@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-text-primary min-h-screen antialiased;
+    /* radial purple/blue glow behind content */
+    background-image: radial-gradient(circle at 50% -20%, rgba(139, 92, 246, 0.15) 0%, rgba(11, 14, 20, 1) 40%);
+    background-attachment: fixed;
+  }
+}
