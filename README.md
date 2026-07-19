@@ -192,3 +192,12 @@ This project includes a production-ready CI pipeline configured via `.github/wor
     *   Runs the `pytest` suite in under **1 minute** by using an in-memory SQLite database and bypassing heavy database seeding.
 *   **Verification**: Ensures that routing, payload schemas, JWT authentication, and recommendation fallback behaviors remain stable during development.
 
+---
+
+## 🎨 Frontend Architecture
+
+MOVICO includes a highly polished, cinematic frontend built with **React**, **Vite**, and **Tailwind CSS**.
+* **Cinematic Design**: Features glassmorphism, widescreen movie banners (letterboxing), and typography (Bebas Neue/Manrope) matching Netflix/Max.
+* **Component-Driven**: Shared `MovieCard` components with text cleanly overlaid on dark poster gradients.
+* **Responsive Layouts**: Dynamic grids for Browse, Trending, and fully personalized Recommendation dashboards.
+
