@@ -1,0 +1,11 @@
+export const Home = () => <div className="p-8"><h1 className="text-2xl font-bold">Home</h1></div>;
+export const Browse = () => <div className="p-8"><h1 className="text-2xl font-bold">Browse</h1></div>;
+export const Trending = () => <div className="p-8"><h1 className="text-2xl font-bold">Trending</h1></div>;
+export const Recommendations = () => <div className="p-8"><h1 className="text-2xl font-bold">Recommendations</h1></div>;
+export const Watchlist = () => <div className="p-8"><h1 className="text-2xl font-bold">Watchlist</h1></div>;
+export const History = () => <div className="p-8"><h1 className="text-2xl font-bold">History</h1></div>;
+export const Genres = () => <div className="p-8"><h1 className="text-2xl font-bold">Genres</h1></div>;
+export const Ratings = () => <div className="p-8"><h1 className="text-2xl font-bold">Ratings</h1></div>;
+export const Profile = () => <div className="p-8"><h1 className="text-2xl font-bold">Profile</h1></div>;
+export const Settings = () => <div className="p-8"><h1 className="text-2xl font-bold">Settings</h1></div>;
+export const Login = () => <div className="p-8 flex items-center justify-center min-h-screen"><h1 className="text-2xl font-bold">Login Page (No Layout)</h1></div>;
