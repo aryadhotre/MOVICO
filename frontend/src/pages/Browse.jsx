@@ -4,36 +4,7 @@ import GlassCard from '../components/GlassCard';
 import { Link } from 'react-router-dom';
 import { Star, Filter, X, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 
-function MovieCard({ movie }) {
-  return (
-    <Link to={`/movies/${movie.id}`} className="group block h-full">
-      <GlassCard className="h-full flex flex-col p-0 overflow-hidden group-hover:-translate-y-2 transition-transform duration-300">
-        <div className="relative aspect-[2/3] w-full bg-[#161B26] rounded-t-2xl overflow-hidden">
-          {movie.poster_url ? (
-            <img src={movie.poster_url} alt={movie.title} className="w-full h-full object-cover" loading="lazy" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-text-secondary text-xs text-center p-4">No Poster</div>
-          )}
-          <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/80 to-transparent" />
-        </div>
-        <div className="p-3 flex-1 flex flex-col gap-1">
-          <h3 className="font-semibold text-text-primary text-sm line-clamp-2 group-hover:text-accent-primary transition-colors">
-            {movie.title}
-          </h3>
-          <div className="flex items-center justify-between mt-auto pt-1 text-xs text-text-secondary">
-            <span>{movie.release_date ? movie.release_date.substring(0, 4) : ''}</span>
-            {movie.vote_average > 0 && (
-              <div className="flex items-center gap-1 text-rating font-medium">
-                <Star size={11} className="fill-rating" />
-                {movie.vote_average.toFixed(1)}
-              </div>
-            )}
-          </div>
-        </div>
-      </GlassCard>
-    </Link>
-  );
-}
+import MovieCard from '../components/MovieCard';
 
 export default function Browse() {
   const [movies, setMovies] = useState([]);
