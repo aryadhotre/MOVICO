@@ -6,9 +6,11 @@ import { getMe } from '../api/auth';
 import GlassCard from '../components/GlassCard';
 import RatingInsights from '../components/RatingInsights';
 import WatchlistPanel from '../components/WatchlistPanel';
-import { Star, Clock, Calendar, Play } from 'lucide-react';
+import { useRating } from '../context/RatingContext';
+import { Star, Clock, Calendar, Play, AlertCircle, X } from 'lucide-react';
 
 export default function Home() {
+  const { ratingVersion, error: ratingError, clearError } = useRating();
   const [user, setUser] = useState(null);
   const [heroMovie, setHeroMovie] = useState(null);
   const [trending, setTrending] = useState([]);
@@ -49,10 +51,20 @@ export default function Home() {
       }
     }
     fetchData();
-  }, []);
+  }, [ratingVersion]); // re-fetch whenever a rating is submitted
 
   return (
     <div className="space-y-12">
+      {/* Inline error banner from rating context */}
+      {ratingError && (
+        <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl">
+          <AlertCircle size={18} className="shrink-0" />
+          <span className="text-sm flex-1">{ratingError}</span>
+          <button onClick={clearError} className="hover:text-red-300 transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+      )}
       {/* Hero Section */}
       <section>
         <div className="mb-6">

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { getMe } from '../api/auth';
+import SystemStatus from './SystemStatus';
 import { 
   Film, Home, Compass, TrendingUp, Sparkles, Bookmark, 
   Clock, Tag, Star, User, Settings, LogOut, Search, ChevronDown
@@ -81,9 +82,12 @@ export default function Layout() {
           ))}
         </nav>
 
+        {/* System Status */}
+        <SystemStatus />
+
         {/* User Card */}
-        <div className="p-4 border-t border-white/10">
-          <div className="flex items-center gap-3 p-2 bg-black/20 rounded-xl">
+        <div className="p-4 pt-0 border-t border-white/10">
+          <div className="flex items-center gap-3 p-2 bg-black/20 rounded-xl mt-4">
             <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center shrink-0">
               <User size={20} className="text-text-secondary" />
             </div>
