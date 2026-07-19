@@ -123,7 +123,7 @@ def train_and_evaluate_models(db: Session = None) -> dict:
             "idx_to_movie": idx_to_movie_train
         }
         collab_model = CollaborativeRecommender(epochs=settings.SVD_EPOCHS, k_components=settings.SVD_FACTORS)
-        collab_model.fit(csr_train, collab_mappings)
+        collab_model.fit(csr_train, collab_mappings, val_data=test_ratings)
         collab_model.save()
 
         # 7. Initialize Hybrid model for evaluation
@@ -203,7 +203,7 @@ def train_and_evaluate_models(db: Session = None) -> dict:
             pickle.dump(full_mappings, f)
         
         prod_collab = CollaborativeRecommender(epochs=settings.SVD_EPOCHS, k_components=settings.SVD_FACTORS)
-        prod_collab.fit(full_csr, full_mappings)
+        prod_collab.fit(full_csr, full_mappings, val_data=test_ratings)
         prod_collab.save()  # Overwrites svd_model.pkl with the production SVD weights
 
         return metrics
