@@ -18,11 +18,17 @@ export async function apiFetch(path, options = {}) {
     let errorMessage = 'An error occurred';
     try {
       const errorData = await response.json();
-      errorMessage = errorData.detail || errorData.message || errorMessage;
+      if (Array.isArray(errorData.detail)) {
+        errorMessage = errorData.detail.map(e => e.msg).join(', ');
+      } else if (typeof errorData.detail === 'string') {
+        errorMessage = errorData.detail;
+      } else {
+        errorMessage = errorData.message || errorMessage;
+      }
     } catch (e) {
       errorMessage = response.statusText;
     }
-    throw new Error(`API Error: ${errorMessage}`);
+    throw new Error(errorMessage);
   }
 
   return response.json();
