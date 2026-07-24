@@ -15,6 +15,9 @@ export async function apiFetch(path, options = {}) {
   });
 
   if (!response.ok) {
+    if (response.status === 401 && !path.includes('/auth/login')) {
+      localStorage.removeItem('jwt');
+    }
     let errorMessage = 'An error occurred';
     try {
       const errorData = await response.json();

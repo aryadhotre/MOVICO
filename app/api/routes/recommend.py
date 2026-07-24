@@ -9,6 +9,7 @@ from app.services.recommender import RecommenderCoordinator
 router = APIRouter(prefix="/recommendations", tags=["Recommendations"])
 coordinator = RecommenderCoordinator()
 
+@router.get("", response_model=RecommendationResponse)
 @router.get("/", response_model=RecommendationResponse)
 async def get_recommendations(
     limit: int = Query(10, ge=1, le=50, description="Number of recommendations to fetch"),

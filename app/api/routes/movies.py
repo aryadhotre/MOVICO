@@ -93,7 +93,7 @@ def get_genres(
 @router.get("/trending", response_model=PaginatedMovieResponse)
 def get_trending_movies(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    page_size: int = Query(20, ge=1, le=1000, description="Items per page"),
     genre: Optional[str] = Query(None, description="Filter trending movies by genre"),
     db: Session = Depends(get_db)
 ):
@@ -115,7 +115,7 @@ def get_trending_movies(
 @router.get("/browse", response_model=PaginatedMovieResponse)
 def browse_movies(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    page_size: int = Query(20, ge=1, le=1000, description="Items per page"),
     sort_by: str = Query("popularity", regex="^(popularity|trending|title|vote_average|release_date)$", description="Sort field"),
     order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
     genre: Optional[str] = Query(None, description="Filter by a single genre (e.g., 'Action')"),
@@ -174,7 +174,7 @@ def browse_movies(
 def search_movies(
     q: str = Query(..., min_length=1, description="Search query string"),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    page_size: int = Query(20, ge=1, le=1000, description="Items per page"),
     genre: Optional[str] = Query(None, description="Filter results by a single genre"),
     genres: Optional[str] = Query(None, description="Filter results by multiple genres, comma-separated AND logic"),
     db: Session = Depends(get_db)

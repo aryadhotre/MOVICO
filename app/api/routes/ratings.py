@@ -54,7 +54,7 @@ def submit_rating(
 @router.get("/history", response_model=PaginatedRatingResponse)
 def get_rating_history(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    page_size: int = Query(20, ge=1, le=1000, description="Items per page"),
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
@@ -105,7 +105,7 @@ def add_to_watchlist(
 @router.get("/watchlist", response_model=PaginatedWatchlistResponse)
 def get_watchlist(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    page_size: int = Query(20, ge=1, le=1000, description="Items per page"),
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):

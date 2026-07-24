@@ -35,7 +35,12 @@ class RedisCacheService:
     def is_available(self) -> bool:
         """Returns True if Redis is initialized and reachable, False otherwise."""
         if self.client is None:
-            # Retry connection once in case Redis became available later
+            # Avoid repeated connection timeouts if Redis failed recently
+            import time
+            now = time.time()
+            if hasattr(self, "_last_connect_attempt") and (now - self._last_connect_attempt < 60):
+                return False
+            self._last_connect_attempt = now
             self._connect()
         return self.client is not None
 
