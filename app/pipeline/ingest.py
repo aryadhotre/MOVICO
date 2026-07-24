@@ -214,29 +214,26 @@ class DataPipeline:
             # Convert timestamp to datetime objects
             ratings_df["datetime"] = pd.to_datetime(ratings_df["timestamp"], unit="s")
             
-            # Group ratings into chunks to avoid memory bottlenecks
-            chunk_size = 50000
-            rating_records = []
+            # Use chunked itertuples for ultra-fast, memory-efficient bulk insertion
+            chunk_size = 100000
+            total_rows = len(ratings_df)
             
-            for idx, row in ratings_df.iterrows():
-                rating_records.append({
-                    "user_id": int(row["userId"]),
-                    "movie_id": int(row["movieId"]),
-                    "rating": float(row["rating"]),
-                    "timestamp": row["datetime"]
-                })
-                
-                if len(rating_records) >= chunk_size:
-                    db.bulk_insert_mappings(Rating, rating_records)
-                    db.commit()
-                    logger.info(f"  Seeded {idx + 1:,}/{len(ratings_df):,} ratings...")
-                    rating_records = []
-                    
-            if rating_records:
-                db.bulk_insert_mappings(Rating, rating_records)
+            for i in range(0, total_rows, chunk_size):
+                chunk_df = ratings_df.iloc[i:i + chunk_size]
+                records = [
+                    {
+                        "user_id": int(r.userId),
+                        "movie_id": int(r.movieId),
+                        "rating": float(r.rating),
+                        "timestamp": r.datetime
+                    }
+                    for r in chunk_df.itertuples(index=False)
+                ]
+                db.bulk_insert_mappings(Rating, records)
                 db.commit()
+                logger.info(f"  Seeded {min(i + chunk_size, total_rows):,}/{total_rows:,} ratings...")
                 
-            logger.info(f"Seeded {len(ratings_df):,} ratings successfully.")
+            logger.info(f"Seeded {total_rows:,} ratings successfully.")
         else:
             logger.info(f"Ratings table already contains {rating_count:,} records. Skipping seeding.")
 

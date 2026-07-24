@@ -109,6 +109,8 @@ The highest-scoring similarity match above $0.05$ is returned as the explanation
 | GET | `/api/system/metrics` | Recommender validation metrics (RMSE, Coverage, etc.) |
 | POST | `/api/system/train` | Trigger offline training pipeline |
 | POST | `/api/system/enrich` | Trigger batch TMDB metadata enricher |
+| POST | `/api/system/import-recent` | Import popular 2024-2025 movies directly from TMDB Discover API |
+
 
 ---
 

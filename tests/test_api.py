@@ -322,3 +322,12 @@ def test_recommendations_with_explanations(client: TestClient):
                 assert "similarity_score" in movie["explanation"]
                 assert "reason_type" in movie["explanation"]
 
+def test_import_recent_movies_without_api_key(client: TestClient):
+    """Verifies that trigger_import_recent_movies returns 400 when TMDB_API_KEY is missing."""
+    response = client.post("/api/system/import-recent?pages=1&start_year=2024&end_year=2025")
+    assert response.status_code == 400
+    data = response.json()
+    assert "detail" in data
+    assert "TMDB_API_KEY" in data["detail"]
+
+

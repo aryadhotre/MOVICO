@@ -161,3 +161,27 @@ def trigger_tmdb_enrichment(
         "status": "accepted", 
         "detail": f"TMDB enrichment task queued in background" + (f" (limit: {limit} movies)" if limit else " (all unenriched movies)")
     }
+
+
+@router.post("/import-recent", status_code=status.HTTP_200_OK)
+def trigger_import_recent_movies(
+    pages: int = Query(5, ge=1, le=20, description="Number of TMDB discover pages to fetch (20 movies/page)"),
+    start_year: int = Query(2024, ge=2020, description="Start release year"),
+    end_year: int = Query(2025, ge=2020, description="End release year"),
+    db: Session = Depends(get_db)
+):
+    """Imports popular recent movies released between start_year and end_year directly from TMDB.
+    
+    Requires TMDB_API_KEY to be configured in .env.
+    Inserts new 2024-2025 movies into the database complete with poster URLs, cast lists, directors, and plot overviews.
+    """
+    from app.pipeline.tmdb_importer import import_recent_movies_from_tmdb
+    
+    if not settings.TMDB_API_KEY or settings.TMDB_API_KEY == "your-tmdb-api-key-here":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="TMDB_API_KEY not configured. Add your free API key to .env file. Get one at https://www.themoviedb.org/settings/api"
+        )
+
+    result = import_recent_movies_from_tmdb(db, max_pages=pages, start_year=start_year, end_year=end_year)
+    return result
