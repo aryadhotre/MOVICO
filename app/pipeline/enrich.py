@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import json
 import logging
 from typing import Iterable, Optional
 
@@ -270,6 +271,98 @@ async def import_discover(
     return {"imported": imported, "skipped": skipped}
 
 
+def _pending_cast(limit: Optional[int]) -> list[tuple[int, str]]:
+    """Enriched rows that still have no structured billing, most-rated first."""
+    query = """
+        SELECT id, tmdb_id FROM movies
+        WHERE cast_json IS NULL
+          AND poster_path IS NOT NULL
+          AND tmdb_id IS NOT NULL AND tmdb_id NOT IN ('', 'nan', 'None')
+        ORDER BY rating_count DESC, vote_count DESC, id ASC
+    """
+    if limit:
+        query += f" LIMIT {int(limit)}"
+    connection = connect()
+    try:
+        return connection.execute(query).fetchall()
+    finally:
+        connection.close()
+
+
+async def backfill_cast(
+    limit: Optional[int] = None,
+    batch_size: int = 500,
+    concurrency: int = 24,
+    rate: float = 36.0,
+    max_cast: int = 10,
+) -> dict[str, int]:
+    """Adds structured cast billing (name, character, portrait) to the catalogue.
+
+    Deliberately additive: it writes ``cast_json`` and nothing else, so a failure
+    part-way through cannot damage metadata that is already correct. Rows are
+    marked with an empty array when TMDB has no cast, which keeps the run
+    resumable without re-requesting dead identifiers.
+    """
+    pending = _pending_cast(limit)
+    if not pending:
+        logger.info("No rows pending cast backfill.")
+        return {"attempted": 0, "written": 0}
+
+    logger.info("Backfilling cast for %s titles ...", f"{len(pending):,}")
+    written = 0
+    started = asyncio.get_event_loop().time()
+
+    def write(rows: list[tuple]) -> None:
+        connection = connect()
+        try:
+            with connection:
+                connection.executemany(
+                    "UPDATE movies SET cast_json = ? WHERE id = ?", rows
+                )
+        finally:
+            connection.close()
+
+    async with TMDBClient(settings.TMDB_API_KEY, concurrency=concurrency, rate=rate) as client:
+        for offset in range(0, len(pending), batch_size):
+            batch = pending[offset : offset + batch_size]
+            payloads = await client.map_concurrent(
+                batch, lambda pair: client.credits(pair[1])
+            )
+
+            updates = []
+            for (movie_id, _tmdb_id), payload in zip(batch, payloads):
+                billing = []
+                for member in sorted(
+                    (payload or {}).get("cast", []), key=lambda m: m.get("order", 9_999)
+                )[:max_cast]:
+                    name = (member.get("name") or "").strip()
+                    if not name:
+                        continue
+                    billing.append(
+                        {
+                            "n": name,
+                            "c": (member.get("character") or "").strip() or None,
+                            "p": member.get("profile_path"),
+                        }
+                    )
+                updates.append((json.dumps(billing, ensure_ascii=False), movie_id))
+                written += 1
+
+            await asyncio.to_thread(write, updates)
+
+            done = offset + len(batch)
+            elapsed = asyncio.get_event_loop().time() - started
+            rps = done / elapsed if elapsed else 0.0
+            logger.info(
+                "  %s/%s  |  %.0f req/s  |  ~%.0f min left",
+                f"{done:,}", f"{len(pending):,}", rps,
+                ((len(pending) - done) / rps / 60) if rps else 0.0,
+            )
+
+    logger.info("Cast backfill finished: %s rows written", f"{written:,}")
+    return {"attempted": len(pending), "written": written}
+
+
 def recompute_scores() -> dict[str, int]:
     """Rebuilds ranking columns across the whole catalogue on one scale.
 
@@ -365,7 +458,7 @@ if __name__ == "__main__":
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     parser = argparse.ArgumentParser(description="TMDB catalogue enrichment")
-    parser.add_argument("command", choices=["enrich", "discover", "scores"])
+    parser.add_argument("command", choices=["enrich", "discover", "scores", "cast"])
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--pages", type=int, default=60)
     parser.add_argument("--start-year", type=int, default=2023)
@@ -376,6 +469,8 @@ if __name__ == "__main__":
 
     if args.command == "enrich":
         print(asyncio.run(enrich_pending(limit=args.limit)))
+    elif args.command == "cast":
+        print(asyncio.run(backfill_cast(limit=args.limit)))
     elif args.command == "discover":
         print(
             asyncio.run(

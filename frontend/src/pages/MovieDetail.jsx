@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, Bookmark, BookmarkCheck, Film, Play, Star, X } from 'lucide-react';
 import MovieRow from '../components/MovieRow';
+import CastRail from '../components/CastRail';
+import { useToast } from '../components/Toast';
 import RatingStars from '../components/RatingStars';
 import Poster from '../components/Poster';
 import PageSpinner from '../components/PageSpinner';
@@ -72,6 +74,7 @@ export default function MovieDetail() {
   const { data: savedIds } = useWatchlistIds();
   const rate = useRateMovie();
   const toggleWatchlist = useToggleWatchlist();
+  const toast = useToast();
 
   if (isLoading) return <PageSpinner label="Loading film" />;
 
@@ -201,7 +204,14 @@ export default function MovieDetail() {
                 {isAuthenticated ? (
                   <button
                     type="button"
-                    onClick={() => toggleWatchlist.mutate({ movieId: movie.id, saved })}
+                    onClick={() => {
+                      toggleWatchlist.mutate({ movieId: movie.id, saved });
+                      toast.push({
+                        kind: 'watchlist',
+                        message: saved ? 'Removed from watchlist' : 'Saved to watchlist',
+                        detail: movie.title,
+                      });
+                    }}
                     className="btn-secondary"
                   >
                     {saved ? <BookmarkCheck className="h-4 w-4 text-tungsten-500" /> : <Bookmark className="h-4 w-4" />}
@@ -222,7 +232,15 @@ export default function MovieDetail() {
                     value={myRating}
                     size={20}
                     showValue
-                    onChange={(next) => rate.mutate({ movieId: movie.id, rating: next || 0.5 })}
+                    onChange={(next) => {
+                      const value = next || 0.5;
+                      rate.mutate({ movieId: movie.id, rating: value });
+                      toast.push({
+                        kind: 'rating',
+                        message: `Rated ${value.toFixed(1)}`,
+                        detail: movie.title,
+                      });
+                    }}
                   />
                 </div>
               )}
@@ -243,6 +261,10 @@ export default function MovieDetail() {
                 </p>
               </section>
             )}
+
+            <div className="mt-12">
+              <CastRail billing={movie.billing} names={movie.cast} />
+            </div>
 
             {movie.keywords?.length > 0 && (
               <section className="mt-12">
@@ -295,14 +317,12 @@ export default function MovieDetail() {
                     </p>
                   </div>
                 )}
-                {movie.cast?.length > 0 && (
+                {movie.billing?.length > 0 && (
                   <div>
-                    <p className="tech mb-1.5">Starring</p>
-                    <ul className="space-y-1">
-                      {movie.cast.slice(0, 8).map((member) => (
-                        <li key={member} className="text-sm text-print-200">{member}</li>
-                      ))}
-                    </ul>
+                    <p className="tech mb-1">Leading</p>
+                    <p className="text-sm leading-relaxed text-print-200">
+                      {movie.billing.slice(0, 3).map((m) => m.name).join(', ')}
+                    </p>
                   </div>
                 )}
               </div>

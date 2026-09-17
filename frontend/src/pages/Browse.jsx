@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Compass, Filter, Loader2, X } from 'lucide-react';
+import { Compass, Filter, Loader2, LayoutGrid, Rows3, X } from 'lucide-react';
 import MovieGrid from '../components/MovieGrid';
 import EmptyState from '../components/EmptyState';
 import { useBrowse, useGenres } from '../lib/queries';
@@ -37,6 +37,27 @@ export default function Browse({ publicMode = false }) {
   // Filters live in the URL so a filtered view is shareable and survives reload.
   const [searchParams, setSearchParams] = useSearchParams();
   const [showFilters, setShowFilters] = useState(false);
+  // Density is a per-viewer preference, so it is remembered locally rather than
+  // put in the URL, which is for the query itself.
+  const [dense, setDense] = useState(() => {
+    try {
+      return localStorage.getItem('movico.browse.dense') === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleDensity = () => {
+    setDense((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem('movico.browse.dense', next ? '1' : '0');
+      } catch {
+        /* storage blocked; the preference simply will not persist */
+      }
+      return next;
+    });
+  };
 
   const filters = useMemo(
     () => ({
@@ -126,6 +147,17 @@ export default function Browse({ publicMode = false }) {
                 </option>
               ))}
             </select>
+
+            <button
+              type="button"
+              onClick={toggleDensity}
+              aria-label={dense ? 'Switch to comfortable grid' : 'Switch to dense grid'}
+              aria-pressed={dense}
+              className="btn-icon"
+              title={dense ? 'Comfortable' : 'Dense'}
+            >
+              {dense ? <LayoutGrid className="h-4 w-4" /> : <Rows3 className="h-4 w-4" />}
+            </button>
 
             <button
               type="button"
@@ -235,6 +267,7 @@ export default function Browse({ publicMode = false }) {
         movies={movies}
         loading={isLoading}
         skeletonCount={24}
+        dense={dense}
         emptyState={
           <EmptyState
             icon={Compass}

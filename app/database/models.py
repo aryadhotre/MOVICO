@@ -34,6 +34,10 @@ class Movie(Base):
     release_date = Column(String(20), nullable=True)
     director = Column(String(255), nullable=True)
     cast_list = Column(Text, nullable=True)  # Comma-separated top cast names
+    # Structured billing: [{"n": name, "c": character, "p": profile_path}].
+    # cast_list stays for search indexing and plain-text display; this carries the
+    # portrait paths the detail page needs, which names alone cannot provide.
+    cast_json = Column(Text, nullable=True)
     runtime = Column(Integer, nullable=True)
     vote_average = Column(Float, nullable=True, index=True)  # TMDB community vote average
     original_language = Column(String(10), nullable=True, index=True)

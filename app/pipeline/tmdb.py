@@ -166,6 +166,10 @@ class TMDBClient:
             language="en-US",
         )
 
+    async def credits(self, tmdb_id: int | str) -> Optional[dict]:
+        """Cast and crew only — a far smaller response than the full record."""
+        return await self.get(f"/movie/{tmdb_id}/credits")
+
     async def discover(
         self,
         page: int = 1,

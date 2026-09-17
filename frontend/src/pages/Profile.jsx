@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom';
 import { Bookmark, Star, TrendingUp, User as UserIcon } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
 import SpecSheet from '../components/film/SpecSheet';
+import TasteFingerprint from '../components/TasteFingerprint';
+import CountUp from '../components/motion/CountUp';
 import { useTasteStats } from '../lib/queries';
 import { useAuth } from '../lib/auth';
 
@@ -72,8 +74,8 @@ function StatTile({ icon: Icon, label, value, hint }) {
   return (
     <div className="border border-print-100/10 bg-film-900/60 p-6">
       <Icon className="h-4 w-4 text-tungsten-500" strokeWidth={1.8} />
-      <p className="mt-4 font-display text-[2rem] font-light leading-none tabular-nums text-print-50">
-        {value}
+      <p className="mt-4 font-display text-[2rem] font-light leading-none text-print-50">
+        {typeof value === 'number' ? <CountUp value={value} /> : value}
       </p>
       <p className="tech mt-2">{label}</p>
       {hint && <p className="mt-1.5 font-mono text-[10px] text-print-500">{hint}</p>}
@@ -135,14 +137,13 @@ export default function Profile() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <section className="panel p-6">
-              <h2 className="slate-label mb-1">Genres you gravitate to</h2>
-              <p className="tech mb-6 normal-case">Counted from films you rated 3.5 or higher</p>
-              {stats.top_genres?.length > 0 ? (
-                <BarList items={stats.top_genres} total={stats.ratings_count} />
-              ) : (
-                <p className="text-sm text-print-400">
-                  Rate a few films positively to see this.
-                </p>
+              <h2 className="slate-label mb-1">Your taste fingerprint</h2>
+              <p className="tech mb-6 normal-case">Shape of your affinity across genres</p>
+              <TasteFingerprint genres={stats.top_genres ?? []} />
+              {stats.top_genres?.length > 0 && (
+                <div className="mt-8 border-t border-print-100/10 pt-6">
+                  <BarList items={stats.top_genres.slice(0, 5)} total={stats.ratings_count} />
+                </div>
               )}
             </section>
 

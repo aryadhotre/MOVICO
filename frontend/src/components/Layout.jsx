@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Bookmark, Clapperboard, Compass, LogOut, Search, Star, User as UserIcon } from 'lucide-react';
 import Logo from './Logo';
 import CommandPalette from './CommandPalette';
+import ShortcutsOverlay, { useShortcuts } from './ShortcutsOverlay';
 import { useAuth } from '../lib/auth';
 
 const NAV = [
@@ -19,22 +20,18 @@ const MOBILE_NAV = [NAV[0], NAV[1], NAV[2], NAV[3], NAV[5]];
 export default function Layout() {
   const { user, signOut } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, [location.pathname]);
 
-  useEffect(() => {
-    const handler = (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        setPaletteOpen(true);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
+  useShortcuts(navigate, {
+    onSearch: () => setPaletteOpen(true),
+    onHelp: () => setShortcutsOpen((open) => !open),
+  });
 
   return (
     <div className="min-h-screen">
@@ -87,6 +84,14 @@ export default function Layout() {
             <kbd className="border border-print-100/12 px-1.5 py-0.5 font-mono text-[10px] text-print-500">
               ⌘K
             </kbd>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShortcutsOpen(true)}
+            className="mb-3 w-full text-left font-mono text-[10px] uppercase tracking-wider text-print-500 transition-colors hover:text-tungsten-400"
+          >
+            Press ? for shortcuts
           </button>
 
           <div className="flex items-center gap-3 px-1 py-2">
@@ -156,6 +161,7 @@ export default function Layout() {
       </nav>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <ShortcutsOverlay open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   );
 }

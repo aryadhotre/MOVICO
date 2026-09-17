@@ -24,13 +24,21 @@ export default function MovieGrid({
   numbered = false,
   emptyState = null,
   priorityCount = 6,
+  dense = false,
 }) {
   if (!loading && movies.length === 0) return emptyState;
 
+  // Dense packs more titles per row for scanning a long catalogue; comfortable
+  // gives the artwork room. Both are driven by the track minimum rather than a
+  // fixed column count, so neither breaks at an awkward viewport width.
+  const track = dense
+    ? 'repeat(auto-fill, minmax(clamp(96px, 10vw, 132px), 1fr))'
+    : 'repeat(auto-fill, minmax(clamp(130px, 15vw, 180px), 1fr))';
+
   return (
     <div
-      className="grid gap-x-4 gap-y-6"
-      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(clamp(130px, 15vw, 180px), 1fr))' }}
+      className={dense ? 'grid gap-x-3 gap-y-5' : 'grid gap-x-4 gap-y-6'}
+      style={{ gridTemplateColumns: track }}
     >
       {movies.map((movie, index) => (
         <MovieCard
@@ -39,6 +47,7 @@ export default function MovieGrid({
           rank={numbered ? index + 1 : null}
           matchScore={showMatch ? movie.matchScore ?? null : null}
           priority={index < priorityCount}
+          showRating={!dense}
         />
       ))}
       {loading && <GridSkeleton count={skeletonCount} />}

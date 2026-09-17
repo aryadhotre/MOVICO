@@ -16,6 +16,7 @@ space they occupy.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from datetime import datetime
@@ -129,6 +130,28 @@ def split_list(value: Optional[str], separator: str = ",") -> List[str]:
     return [part.strip() for part in value.split(separator) if part.strip()]
 
 
+def parse_billing(value: Optional[str]) -> List[dict]:
+    """Decodes the compact cast_json blob into named fields.
+
+    Stored with one-letter keys because the column carries ten entries for each of
+    ~94k titles; expanded here so the API surface stays readable. A malformed blob
+    degrades to an empty list rather than failing the whole response.
+    """
+    if not value:
+        return []
+    try:
+        entries = json.loads(value)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(entries, list):
+        return []
+    return [
+        {"name": entry["n"], "character": entry.get("c"), "profile_path": entry.get("p")}
+        for entry in entries
+        if isinstance(entry, dict) and entry.get("n")
+    ]
+
+
 def split_genres(value: Optional[str]) -> List[str]:
     """Genre list with MovieLens's "(no genres listed)" filler removed.
 
@@ -220,6 +243,14 @@ class MovieCard(BaseModel):
         }
 
 
+class CastMember(BaseModel):
+    """One billed performer, with the portrait path the detail page renders."""
+
+    name: str
+    character: Optional[str] = None
+    profile_path: Optional[str] = None
+
+
 class MovieDetail(MovieCard):
     """Full record for the detail page."""
 
@@ -227,6 +258,7 @@ class MovieDetail(MovieCard):
     tagline: Optional[str] = None
     director: Optional[str] = None
     cast: List[str] = Field(default_factory=list)
+    billing: List[CastMember] = Field(default_factory=list)
     keywords: List[str] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
     trailer_key: Optional[str] = None
@@ -260,6 +292,7 @@ class MovieDetail(MovieCard):
             "tagline": getattr(data, "tagline", None),
             "director": getattr(data, "director", None),
             "cast": split_list(getattr(data, "cast_list", None)),
+            "billing": parse_billing(getattr(data, "cast_json", None)),
             "keywords": split_list(getattr(data, "keywords", None)),
             "tags": split_list(getattr(data, "user_tags", None), " ")[:12],
             "trailer_key": getattr(data, "trailer_key", None),
