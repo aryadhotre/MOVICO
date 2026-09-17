@@ -58,14 +58,19 @@ function Hero({ films }) {
             loading="eager"
             fetchpriority="high"
             decoding="async"
-            initial={{ opacity: 0, scale: 1.1 }}
+            initial={{ opacity: 0, scale: 1.08 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ opacity: { duration: 1.4 }, scale: { duration: 14, ease: 'linear' } }}
+            transition={{ opacity: { duration: 1.4 }, scale: { duration: 16, ease: 'linear' } }}
             className="absolute inset-0 h-full w-full object-cover"
           />
         )}
-        <div className="absolute inset-0 bg-film-950/64" />
-        <div className="absolute inset-0 bg-gradient-to-t from-film-950 via-film-950/55 to-film-950/70" />
+
+        {/* Graded so the copy always sits on dark ground whatever the plate. The
+            horizontal ramp is the load-bearing one: artwork is busiest centre-right
+            and the text column lives on the left. */}
+        <div className="absolute inset-0 bg-film-950/55" />
+        <div className="absolute inset-0 bg-gradient-to-r from-film-950 via-film-950/80 to-film-950/30" />
+        <div className="absolute inset-0 bg-gradient-to-t from-film-950 via-transparent to-film-950/75" />
         <div className="absolute inset-0 vignette" />
       </motion.div>
 
@@ -76,91 +81,120 @@ function Hero({ films }) {
       <div className="grain absolute inset-0 z-10" />
       <CueMark />
 
-      <div className="relative z-20 mx-auto flex min-h-[100svh] w-full max-w-[1500px] flex-col justify-between px-6 pb-10 pt-28 sm:px-10">
-        <div className="max-w-4xl">
-          <motion.p
-            initial={reduce ? false : { opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.9, duration: 0.8 }}
-            className="slate-label mb-7"
-          >
-            Reel 01 · Feature Presentation
-          </motion.p>
+      <div className="relative z-20 mx-auto flex min-h-[100svh] w-full max-w-[1500px] flex-col px-6 pb-8 pt-24 sm:px-10 lg:pt-28">
+        <div className="flex flex-1 items-center">
+          <div className="grid w-full items-center gap-12 lg:grid-cols-[minmax(0,1fr)_auto]">
+            {/* --------------------------------------------------------- copy */}
+            <div className="max-w-2xl">
+              <motion.p
+                initial={reduce ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.9, duration: 0.8 }}
+                className="slate-label mb-6"
+              >
+                Reel 01 &middot; Feature Presentation
+              </motion.p>
 
-          <h1 className="title-card text-[clamp(2.75rem,8.5vw,7.5rem)] text-print-50">
-            {['Every film', 'worth your', 'evening'].map((line, lineIndex) => (
-              <span key={line} className="block overflow-hidden">
-                <motion.span
-                  className={`inline-block ${lineIndex === 1 ? 'text-tungsten-500' : ''}`}
-                  initial={reduce ? false : { y: '110%' }}
-                  animate={{ y: 0 }}
-                  transition={{ delay: 0.95 + lineIndex * 0.09, duration: 0.85, ease: EASE }}
-                >
-                  {line}
-                </motion.span>
-              </span>
-            ))}
-          </h1>
+              <h1 className="title-hero text-[clamp(2.5rem,5.6vw,5rem)] text-print-50">
+                {['Every film', 'worth your', 'evening'].map((line, lineIndex) => (
+                  <span key={line} className="block overflow-hidden">
+                    <motion.span
+                      className={`inline-block ${lineIndex === 1 ? 'text-tungsten-500' : ''}`}
+                      initial={reduce ? false : { y: '110%' }}
+                      animate={{ y: 0 }}
+                      transition={{ delay: 0.95 + lineIndex * 0.09, duration: 0.85, ease: EASE }}
+                    >
+                      {line}
+                    </motion.span>
+                  </span>
+                ))}
+              </h1>
 
-          <motion.p
-            initial={reduce ? false : { opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.3, duration: 0.9, ease: EASE }}
-            className="mt-8 max-w-lg text-pretty text-base leading-relaxed text-print-300 sm:text-lg"
-          >
-            Rate ten films. A model trained on 33 million ratings finds the rest —
-            and names the films of yours that led it there.
-          </motion.p>
+              <motion.p
+                initial={reduce ? false : { opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 1.3, duration: 0.9, ease: EASE }}
+                className="mt-7 max-w-md text-pretty text-[15px] leading-relaxed text-print-300 sm:text-base"
+              >
+                Rate ten films. A model trained on 33 million ratings finds the rest &mdash;
+                and names the films of yours that led it there.
+              </motion.p>
 
-          <motion.div
-            initial={reduce ? false : { opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.45, duration: 0.9, ease: EASE }}
-            className="mt-10 flex flex-col gap-3 sm:flex-row"
-          >
-            <Link to="/signup" className="btn-primary">
-              <Play className="h-4 w-4" style={{ fill: 'currentColor' }} />
-              Begin
-            </Link>
-            <Link to="/discover" className="btn-secondary">Browse the catalogue</Link>
-          </motion.div>
+              <motion.div
+                initial={reduce ? false : { opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 1.45, duration: 0.9, ease: EASE }}
+                className="mt-9 flex flex-col gap-3 sm:flex-row"
+              >
+                <Link to="/signup" className="btn-primary">
+                  <Play className="h-4 w-4" style={{ fill: 'currentColor' }} />
+                  Begin
+                </Link>
+                <Link to="/discover" className="btn-secondary">Browse the catalogue</Link>
+              </motion.div>
+            </div>
+
+            {/* ----------------------------------------------- now showing */}
+            {/* The featured title as a physical one-sheet. It fills the right half
+                the artwork already occupies and makes "now showing" literal. */}
+            {featured && (
+              <motion.aside
+                initial={reduce ? false : { opacity: 0, x: 24 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 1.15, duration: 0.9, ease: EASE }}
+                className="hidden w-[220px] lg:block xl:w-[248px]"
+              >
+                <Link to={`/movie/${featured.id}`} className="group block">
+                  <div className="overflow-hidden border border-print-100/15 shadow-lift transition-colors duration-300 group-hover:border-tungsten-500">
+                    <Poster
+                      path={featured.poster_path}
+                      alt={featured.title}
+                      priority
+                      maxWidth={500}
+                      sizes="248px"
+                      rounded="rounded-none"
+                    />
+                  </div>
+
+                  <p className="slate-label mt-4">Now showing</p>
+                  <p className="mt-2 font-display text-sm uppercase leading-snug tracking-slate text-print-100 transition-colors group-hover:text-tungsten-400">
+                    {featured.title}
+                  </p>
+                  <p className="mt-1.5 font-mono text-2xs tabular-nums text-print-500">
+                    {featured.year}
+                    {featured.vote_average > 0 && ` \u00b7 \u2605 ${featured.vote_average.toFixed(1)}`}
+                  </p>
+                </Link>
+
+                <div className="mt-5 flex items-center gap-1.5">
+                  {films.slice(0, 6).map((film, position) => (
+                    <button
+                      key={film.id}
+                      type="button"
+                      onClick={() => setIndex(position)}
+                      aria-label={`Show ${film.title}`}
+                      className={`h-[3px] transition-all duration-500 ${
+                        position === index % Math.max(films.length, 1)
+                          ? 'w-8 bg-tungsten-500'
+                          : 'w-4 bg-print-100/25 hover:bg-print-100/50'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </motion.aside>
+            )}
+          </div>
         </div>
 
+        {/* Scroll cue, pinned to the foot of the frame. */}
         <motion.div
           initial={reduce ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 1.7, duration: 1 }}
-          className="hidden items-end justify-between gap-6 lg:flex"
+          transition={{ delay: 1.8, duration: 1 }}
+          className="flex items-center gap-3"
         >
-          <div className="flex items-center gap-4">
-            <span className="tech whitespace-nowrap">Now showing</span>
-            <span className="h-px w-16 bg-print-100/20" />
-            <Link
-              to={featured ? `/movie/${featured.id}` : '/discover'}
-              className="font-display text-sm uppercase tracking-slate text-print-200 transition-colors hover:text-tungsten-400"
-            >
-              {featured?.title}
-            </Link>
-            {featured?.year && (
-              <span className="font-mono text-2xs tabular-nums text-print-500">{featured.year}</span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {films.slice(0, 8).map((film, position) => (
-              <button
-                key={film.id}
-                type="button"
-                onClick={() => setIndex(position)}
-                aria-label={`Show ${film.title}`}
-                className={`h-[3px] transition-all duration-500 ${
-                  position === index % Math.max(films.length, 1)
-                    ? 'w-10 bg-tungsten-500'
-                    : 'w-5 bg-print-100/25 hover:bg-print-100/50'
-                }`}
-              />
-            ))}
-          </div>
+          <span className="tech">Scroll</span>
+          <span className="h-px w-12 bg-gradient-to-r from-tungsten-500 to-transparent" />
         </motion.div>
       </div>
     </section>
@@ -178,7 +212,17 @@ function FilmStrip({ films }) {
   return (
     <section className="relative overflow-hidden border-y border-print-100/10 bg-film-900">
       <Perforations />
-      <div className="relative overflow-hidden py-5">
+      {/* Fade the running strip into the page at both ends; a hard cut makes the
+          loop read as a clipped row rather than film passing through a gate. */}
+      <div
+        className="relative overflow-hidden py-5"
+        style={{
+          maskImage:
+            'linear-gradient(to right, transparent, #000 6%, #000 94%, transparent)',
+          WebkitMaskImage:
+            'linear-gradient(to right, transparent, #000 6%, #000 94%, transparent)',
+        }}
+      >
         <div
           className="flex w-max gap-3 px-3"
           style={reduce ? undefined : { animation: 'strip-travel 68s linear infinite' }}
@@ -209,29 +253,49 @@ function FilmStrip({ films }) {
 
 /* ------------------------------------------------------------------- figures */
 
-/** Headline catalogue figures, counting up as they arrive. */
+/**
+ * Headline catalogue figures.
+ *
+ * Separated by hairline rules rather than boxed in a grid of cells: a bordered
+ * four-up reads as a table, and these are four independent facts. The unit sits
+ * beside the number at a smaller size so the eye lands on the magnitude first.
+ */
 function Figures({ stats, metrics }) {
   const items = [
-    { value: stats?.with_posters ?? 0, label: 'Films catalogued', decimals: 0 },
-    { value: (stats?.total_ratings_modelled ?? 0) / 1_000_000, label: 'Ratings modelled', suffix: 'M', decimals: 1 },
-    { value: metrics?.protocol?.catalogue_items ?? 0, label: 'Ranked per request', decimals: 0 },
-    { value: metrics?.hyperparameters?.factors ?? 0, label: 'Latent dimensions', decimals: 0 },
+    { value: stats?.with_posters ?? 0, label: 'Films catalogued', caption: 'with artwork and credits' },
+    {
+      value: (stats?.total_ratings_modelled ?? 0) / 1_000_000,
+      unit: 'M',
+      decimals: 1,
+      label: 'Ratings modelled',
+      caption: 'MovieLens interactions',
+    },
+    {
+      value: metrics?.protocol?.catalogue_items ?? 0,
+      label: 'Ranked per request',
+      caption: 'no candidate sampling',
+    },
+    {
+      value: metrics?.hyperparameters?.factors ?? 0,
+      label: 'Latent dimensions',
+      caption: 'learned taste axes',
+    },
   ];
 
   return (
-    <section className="mx-auto max-w-[1100px] px-6 py-20 sm:px-10">
-      <div className="grid gap-px border border-print-100/10 bg-print-100/10 sm:grid-cols-2 lg:grid-cols-4">
+    <section className="mx-auto max-w-[1200px] px-6 py-20 sm:px-10 sm:py-24">
+      <div className="grid divide-y divide-print-100/10 sm:grid-cols-2 sm:divide-y-0 lg:grid-cols-4 lg:divide-x lg:divide-print-100/10">
         {items.map((item, index) => (
-          <Reveal key={item.label} delay={index * 0.06}>
-            <div className="h-full bg-film-950 p-7 text-center">
-              <p className="font-display text-[2.4rem] font-light leading-none text-tungsten-500">
-                <CountUp
-                  value={item.value}
-                  decimals={item.decimals}
-                  suffix={item.suffix ?? ''}
-                />
+          <Reveal key={item.label} delay={index * 0.07}>
+            <div className="px-0 py-8 sm:px-8 lg:py-2">
+              <p className="flex items-baseline gap-1 font-display text-[clamp(2rem,3.6vw,2.9rem)] font-light leading-none text-tungsten-500">
+                <CountUp value={item.value} decimals={item.decimals ?? 0} />
+                {item.unit && <span className="text-[0.55em] text-tungsten-600">{item.unit}</span>}
               </p>
-              <p className="tech mt-3">{item.label}</p>
+              <p className="mt-3 font-display text-2xs uppercase tracking-slate text-print-100">
+                {item.label}
+              </p>
+              <p className="mt-1.5 font-mono text-[10px] text-print-500">{item.caption}</p>
             </div>
           </Reveal>
         ))}

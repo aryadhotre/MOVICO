@@ -62,9 +62,16 @@
   /* ---------------------------------------------------------------- typography */
 
   /* Title-card treatment: wide-tracked uppercase Futura, as a main title would be
-     set. Tracking this open only works in caps and only at display size. */
+     set. Works up to about 3rem; past that the tracking has to come in. */
   .title-card {
     @apply font-display font-medium uppercase leading-[0.92] tracking-marquee;
+  }
+
+  /* Hero scale. Tracking is optical, not fixed: 0.28em is ~8px of air at a 28px
+     label and ~34px at 120px, which pulls a three-word line past 1400px and wraps
+     it. Large display type needs *less* letter-spacing, not more. */
+  .title-hero {
+    @apply font-display font-medium uppercase leading-[0.88] tracking-[0.045em];
   }
 
   /* The small uppercase label above a section, set like a slate marking. */
