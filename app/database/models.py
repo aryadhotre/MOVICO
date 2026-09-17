@@ -1,6 +1,20 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text
+"""ORM models, split across two databases.
+
+``Movie`` lives in the catalogue (local SQLite, shipped in the image). Everything
+else lives in the user database (Postgres in production). See
+``app.database.connection`` for why.
+
+The consequence visible here: ``movie_id`` on Rating, Watchlist and
+RecommendationHistory is a plain indexed integer, not a ForeignKey. A foreign key
+cannot reference a table in another database, and declaring one would either fail
+at create_all or be silently inert. The route layer verifies the film exists
+before writing, which is where that check has to happen anyway to return a 404.
+"""
+
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSON, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+
 from app.database.connection import Base
 
 class User(Base):
@@ -61,31 +75,37 @@ class Movie(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    ratings = relationship("Rating", back_populates="movie", cascade="all, delete-orphan")
-    watchlist = relationship("Watchlist", back_populates="movie", cascade="all, delete-orphan")
+    # No relationship to Rating or Watchlist: those tables live in the user
+    # database and SQLAlchemy cannot traverse a relationship across engines.
 
 class Rating(Base):
     __tablename__ = "ratings"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Plain integer, not a ForeignKey: movies live in the other database.
+    movie_id = Column(Integer, nullable=False, index=True)
     rating = Column(Float, nullable=False, index=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), index=True)
 
     user = relationship("User", back_populates="ratings")
-    movie = relationship("Movie", back_populates="ratings")
+
+    # One rating per user per film. submit_rating checks for an existing row
+    # first, but two concurrent submissions can both pass that check and insert.
+    __table_args__ = (UniqueConstraint("user_id", "movie_id", name="uq_rating_user_movie"),)
 
 class Watchlist(Base):
     __tablename__ = "watchlists"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Plain integer, not a ForeignKey: movies live in the other database.
+    movie_id = Column(Integer, nullable=False, index=True)
     added_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     user = relationship("User", back_populates="watchlist")
-    movie = relationship("Movie", back_populates="watchlist")
+
+    __table_args__ = (UniqueConstraint("user_id", "movie_id", name="uq_watchlist_user_movie"),)
 
 class RecommendationHistory(Base):
     __tablename__ = "recommendation_history"

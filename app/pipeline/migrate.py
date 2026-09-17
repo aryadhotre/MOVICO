@@ -1,14 +1,19 @@
-"""Idempotent schema reconciliation for the live SQLite database.
+"""Idempotent schema reconciliation, applied per database.
 
 ``Base.metadata.create_all`` only creates missing *tables*; it will not add a
 column or an index to a table that already exists. That is why the indexes added
-in the previous session never reached ``movico.db``. This module diffs the live
+in a previous session never reached ``movico.db``. This module diffs the live
 schema against the ORM models and applies the difference, so an existing database
 picks up new columns and indexes without being rebuilt.
 
-SQLite's ``ALTER TABLE ... ADD COLUMN`` is a cheap metadata-only operation, and
-``CREATE INDEX IF NOT EXISTS`` is safe to re-run, so this can be called on every
-startup.
+Since the split there are two targets, and a table belongs to exactly one of
+them: ``movies`` to the catalogue, everything else to the user database. Running
+every table against every engine would create an empty ``movies`` table in
+Postgres that silently shadows the real catalogue, so the routing here is not a
+convenience -- it is what keeps the two halves from overlapping.
+
+Both ``ALTER TABLE ... ADD COLUMN`` and ``CREATE INDEX IF NOT EXISTS`` are cheap
+and safe to re-run on SQLite and Postgres alike, so this is called on startup.
 """
 
 from __future__ import annotations
@@ -18,13 +23,22 @@ import logging
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
-from app.database.connection import Base, engine
+from app.database.connection import (
+    Base,
+    SINGLE_DATABASE,
+    catalogue_engine,
+    user_engine,
+)
 from app.database.models import Movie  # noqa: F401  (ensures models are registered)
 
 logger = logging.getLogger(__name__)
 
-# Composite and expression indexes that the ORM column definitions cannot express
-# but that the catalogue endpoints depend on.
+#: Tables that live in the catalogue. Everything else in the metadata is user data.
+CATALOGUE_TABLES = {"movies"}
+
+# Composite and expression indexes the ORM column definitions cannot express but
+# that the endpoints depend on. Each is applied only to the engine that owns its
+# table, which _reconcile works out from the table list it was handed.
 _EXTRA_INDEXES = [
     ("ix_movies_bayes_desc", "movies", "(bayes_score DESC)"),
     ("ix_movies_trending_desc", "movies", "(trending_score DESC)"),
@@ -35,29 +49,26 @@ _EXTRA_INDEXES = [
 ]
 
 
-def _sqlite_type(column) -> str:
-    """Renders a column's type for an ALTER TABLE statement."""
-    return column.type.compile(dialect=engine.dialect)
-
-
-def reconcile_schema(target: Engine | None = None) -> dict[str, list[str]]:
-    """Adds any ORM columns and indexes missing from the live database."""
-    target = target or engine
-    Base.metadata.create_all(bind=target)
+def _reconcile(target: Engine, tables) -> dict[str, list[str]]:
+    """Adds the ORM columns and indexes missing from one database."""
+    tables = list(tables)
+    Base.metadata.create_all(bind=target, tables=tables)
 
     inspector = inspect(target)
+    live = set(inspector.get_table_names())
     added_columns: list[str] = []
     added_indexes: list[str] = []
 
-    for table in Base.metadata.sorted_tables:
-        if table.name not in inspector.get_table_names():
+    for table in tables:
+        if table.name not in live:
             continue
 
         existing = {col["name"] for col in inspector.get_columns(table.name)}
         for column in table.columns:
             if column.name in existing:
                 continue
-            ddl = f'ALTER TABLE {table.name} ADD COLUMN "{column.name}" {_sqlite_type(column)}'
+            rendered = column.type.compile(dialect=target.dialect)
+            ddl = f'ALTER TABLE {table.name} ADD COLUMN "{column.name}" {rendered}'
             with target.begin() as connection:
                 connection.execute(text(ddl))
             added_columns.append(f"{table.name}.{column.name}")
@@ -76,8 +87,9 @@ def reconcile_schema(target: Engine | None = None) -> dict[str, list[str]]:
                 )
             added_indexes.append(name)
 
+    wanted = {table.name for table in tables}
     for name, table_name, expression in _EXTRA_INDEXES:
-        if table_name not in inspector.get_table_names():
+        if table_name not in wanted or table_name not in live:
             continue
         with target.begin() as connection:
             connection.execute(
@@ -85,12 +97,35 @@ def reconcile_schema(target: Engine | None = None) -> dict[str, list[str]]:
             )
         added_indexes.append(name)
 
-    if added_columns:
-        logger.info("Schema: added columns %s", ", ".join(added_columns))
-    if added_indexes:
-        logger.info("Schema: ensured %d indexes", len(added_indexes))
-
     return {"columns": added_columns, "indexes": added_indexes}
+
+
+def reconcile_schema(target: Engine | None = None) -> dict[str, list[str]]:
+    """Brings the databases up to the ORM definition.
+
+    Passing ``target`` reconciles that one engine with *every* table, which is what
+    the tests do against a scratch database and what a single-file deployment
+    needs. With no argument it reconciles both halves, each with its own tables.
+    """
+    everything = Base.metadata.sorted_tables
+
+    if target is not None:
+        result = _reconcile(target, everything)
+    elif SINGLE_DATABASE:
+        result = _reconcile(catalogue_engine, everything)
+    else:
+        catalogue = [t for t in everything if t.name in CATALOGUE_TABLES]
+        users = [t for t in everything if t.name not in CATALOGUE_TABLES]
+        result = _reconcile(catalogue_engine, catalogue)
+        for key, values in _reconcile(user_engine, users).items():
+            result[key] += values
+
+    if result["columns"]:
+        logger.info("Schema: added columns %s", ", ".join(result["columns"]))
+    if result["indexes"]:
+        logger.info("Schema: ensured %d indexes", len(result["indexes"]))
+
+    return result
 
 
 def normalise_genre_vocabulary(target: Engine | None = None) -> int:
@@ -102,7 +137,7 @@ def normalise_genre_vocabulary(target: Engine | None = None) -> int:
     """
     from app.pipeline.tmdb import GENRE_ALIASES
 
-    target = target or engine
+    target = target or catalogue_engine
     changed = 0
 
     with target.begin() as connection:
@@ -146,10 +181,31 @@ def rebuild_search_index(target: Engine | None = None) -> int:
 
     ``LIKE '%query%'`` cannot use a B-tree index, so the previous search endpoint
     full-scanned 86k rows on every keystroke. FTS5 gives prefix-matched,
-    relevance-ranked search in microseconds. The table is content-less
-    (``content=''`` is avoided deliberately) and mirrors only what search needs.
+    relevance-ranked search in microseconds.
+
+    The index is **external-content** (``content='movies'``): it stores the
+    tokenised terms but not a second copy of the text, reading column values from
+    ``movies`` on the rare occasions it needs them. A self-contained index
+    duplicated 37 MB of titles and cast lists that already sit two tables away --
+    real money when the database ships inside the image.
+
+    The tradeoff is that an external-content index goes stale if ``movies`` is
+    written without it being rebuilt. That is acceptable here because the search
+    query never reads a column *through* the index: it matches, ranks by BM25 --
+    both of which use the index's own storage -- and joins back to ``movies`` by
+    rowid for everything it displays. A stale index can therefore miss a
+    just-imported film, which the enrichment pipeline fixes by calling this
+    function, but it cannot return a wrong row.
+
+    FTS5 is a SQLite feature and the catalogue is always SQLite, so this is never
+    asked of Postgres -- but the guard keeps a mis-pointed engine from raising a
+    syntax error on startup.
     """
-    target = target or engine
+    target = target or catalogue_engine
+    if target.dialect.name != "sqlite":
+        logger.warning("Search index skipped: %s is not SQLite", target.dialect.name)
+        return 0
+
     with target.begin() as connection:
         connection.execute(text("DROP TABLE IF EXISTS movies_fts"))
         connection.execute(
@@ -159,20 +215,16 @@ def rebuild_search_index(target: Engine | None = None) -> int:
                     title,
                     director,
                     cast_list,
-                    movie_id UNINDEXED,
+                    content='movies',
+                    content_rowid='id',
                     tokenize = "unicode61 remove_diacritics 2"
                 )
                 """
             )
         )
-        connection.execute(
-            text(
-                """
-                INSERT INTO movies_fts (title, director, cast_list, movie_id)
-                SELECT title, COALESCE(director, ''), COALESCE(cast_list, ''), id FROM movies
-                """
-            )
-        )
+        # 'rebuild' populates the index from the content table in one pass; there
+        # is no INSERT ... SELECT for an external-content index.
+        connection.execute(text("INSERT INTO movies_fts(movies_fts) VALUES('rebuild')"))
         count = connection.execute(text("SELECT count(*) FROM movies_fts")).scalar_one()
 
     logger.info("Rebuilt FTS5 search index over %s titles", f"{count:,}")

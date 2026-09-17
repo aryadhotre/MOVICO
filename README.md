@@ -373,18 +373,60 @@ docker compose up        # API on :8005, SQLite + in-process cache
 
 ## Deployment
 
-- **Frontend → Vercel.** `frontend/vercel.json` handles SPA rewrites and immutable
-  asset caching. Set `VITE_API_URL` to the API origin.
-- **Backend → Render.** `render.yaml` is a single web service with a 2GB persistent
-  disk for `movico.db` and the model artifacts.
+Three services, all on free tiers: **Vercel** (frontend), **Render** (API),
+**Supabase** (user database). `DEPLOYMENT.md` is the step-by-step runbook.
 
-Deliberately *not* Postgres + Redis: the catalogue is read-mostly and the models are
-NumPy artifacts on disk, so SQLite on a mounted disk is faster and simpler than a
-network database, and a local cache beats Redis for a single instance — no
-serialisation, no network hop. Both choices keep this inside free tiers.
+### Two databases, split by how the data behaves
+
+| | Catalogue | User data |
+|---|---|---|
+| Holds | 96k films, artwork, credits, scores | accounts, password hashes, ratings, watchlists |
+| Where | SQLite, baked into the image | Postgres (Supabase) |
+| Written by | offline pipelines | the running app |
+| If lost | rebuild it | unrecoverable |
+
+The catalogue is read on nearly every request and never written at runtime, so it
+ships as a build artifact: browse and search stay in single-digit milliseconds, the
+FTS5 index keeps working, and a paused or rate-limited managed database cannot take
+the product offline. User data is the opposite — small, mutable, irreplaceable — so
+it lives in a managed database that survives a redeploy, which matters because free
+Render instances have no persistent disk and lose everything they write.
+
+The cost is that no SQL statement can join a rating to a film. The three endpoints
+that did now read ids from one database and hydrate from the other; see
+`app/database/connection.py`.
+
+### Getting the artifacts there
+
+`movico.db` is ~215 MB and the model pickles ~127 MB — past GitHub's 100 MB file
+limit, and a binary that would be re-stored in full on every rebuild. So they are
+packaged and attached to a GitHub release, and the Docker build downloads them into
+the image:
+
+```bash
+python -m scripts.package_artifacts    # -> dist/movico-artifacts.tar.gz + sha256
+```
+
+Set `ARTIFACTS_URL` and `ARTIFACTS_SHA256` on the Render service. The checksum is
+verified during the build, so a truncated download fails the deploy rather than
+shipping a corrupt catalogue.
+
+### Security
+
+`APP_ENV=production` turns the development defaults into boot failures: the app
+refuses to start with the placeholder `SECRET_KEY`, with `DEBUG` on, or with
+`CORS_ORIGINS` unset. Beyond that — bcrypt hashing, JWTs pinned to one algorithm
+with `exp` required, per-address rate limits on login and registration, constant-time
+admin token comparison, security headers on every response, and a CORS preview
+pattern anchored to the project's own Vercel slug rather than a blanket
+`*.vercel.app` (which, with credentials allowed, would let anyone's deployment read
+authenticated responses). `tests/test_security.py` pins each of these.
 
 Set `ADMIN_TOKEN` to enable the maintenance endpoints, or leave it blank to disable
 them entirely (the default, and the right setting for a public deployment).
+
+Free Render instances sleep after 15 minutes idle and take ~50s to wake. The
+frontend detects this and shows a projector-warming cue rather than an error.
 
 ---
 

@@ -7,19 +7,28 @@ __pycache__/
 *.so
 
 # Distribution / packaging
+#
+# These are anchored with a leading slash. A bare "lib/" matches a directory of
+# that name at ANY depth, which silently excluded frontend/src/lib -- the app's
+# entire data layer, imported from 36 places -- so a clone of this repository
+# could not build. Python's setuptools artifacts only ever appear at the root,
+# so anchoring costs nothing and closes the whole class of collision.
 .Python
-build/
-develop-eggs/
+/build/
+/develop-eggs/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+
+# Not anchored: this is both the Python sdist output and the Vite build output
+# (frontend/dist), and the packaged artifact bundle in dist/.
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 share/python-wheels/
 *.egg-info/
 .installed.cfg

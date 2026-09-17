@@ -21,6 +21,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api.middleware import RequestLoggingMiddleware, setup_exception_handlers
 from app.api.routes import auth, movies, ratings, recommend, system
+from app.api.security import SecurityHeadersMiddleware
 from app.config.settings import settings
 
 os.makedirs("logs", exist_ok=True)
@@ -84,12 +85,16 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    # Vercel preview deployments get a generated subdomain per commit, so the
-    # deployed frontend cannot be enumerated as a fixed origin list.
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    # Vercel preview deployments get a generated subdomain per commit, so they
+    # cannot be enumerated as fixed origins. The pattern is anchored to this
+    # project's slug; see settings.cors_origin_regex for why a broad
+    # "*.vercel.app" would be a hole rather than a convenience.
+    allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    # Explicit rather than "*": with allow_credentials, a wildcard invites
+    # requests carrying headers no endpoint here reads.
+    allow_headers=["Authorization", "Content-Type", "X-Admin-Token"],
     expose_headers=["X-Process-Time"],
     max_age=86400,
 )
@@ -97,6 +102,7 @@ app.add_middleware(
 # JSON catalogue payloads compress by roughly 5x, which matters far more than the
 # CPU cost on a small instance.
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+app.add_middleware(SecurityHeadersMiddleware, production=settings.is_production)
 app.add_middleware(RequestLoggingMiddleware)
 setup_exception_handlers(app)
 

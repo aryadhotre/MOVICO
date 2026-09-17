@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.database.connection import get_db
+from app.database.connection import get_catalogue
 from app.database.models import Movie
 from app.database.schemas import (
     GenreCount,
@@ -125,7 +125,7 @@ def _apply_filters(
 
 
 @router.get("/genres", response_model=GenreListResponse)
-def get_genres(response: Response, db: Session = Depends(get_db)):
+def get_genres(response: Response, db: Session = Depends(get_catalogue)):
     """Genre catalogue with counts, restricted to displayable titles."""
     response.headers["Cache-Control"] = "public, max-age=3600"
 
@@ -162,7 +162,7 @@ def browse_movies(
     year_to: Optional[int] = Query(None, ge=1874, le=2100),
     min_rating: Optional[float] = Query(None, ge=0, le=5),
     require_poster: bool = Query(True, description="Hide titles with no artwork"),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_catalogue),
 ):
     """Paginated catalogue browse with filtering and sorting."""
     response.headers["Cache-Control"] = "public, max-age=120"
@@ -205,7 +205,7 @@ def get_trending(
     page: int = Query(1, ge=1),
     page_size: int = Query(24, ge=1, le=100),
     genre: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_catalogue),
 ):
     """Titles with the strongest current momentum."""
     response.headers["Cache-Control"] = "public, max-age=300"
@@ -223,7 +223,7 @@ def search_movies(
     page: int = Query(1, ge=1),
     page_size: int = Query(24, ge=1, le=100),
     genre: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_catalogue),
 ):
     """Full-text title/cast/director search via FTS5.
 
@@ -253,9 +253,9 @@ def search_movies(
         matches = db.execute(
             text(
                 """
-                SELECT f.movie_id
+                SELECT f.rowid
                 FROM movies_fts f
-                JOIN movies m ON m.id = f.movie_id
+                JOIN movies m ON m.id = f.rowid
                 WHERE movies_fts MATCH :expression
                   AND m.poster_path IS NOT NULL
                 ORDER BY
@@ -309,7 +309,7 @@ def search_movies(
 
 
 @router.get("/home", response_model=HomeFeed)
-def get_home_feed(response: Response, db: Session = Depends(get_db)):
+def get_home_feed(response: Response, db: Session = Depends(get_catalogue)):
     """Every home-page carousel in one response.
 
     Identical for all visitors, so it is cached process-wide and served with a
@@ -428,7 +428,7 @@ def _hidden_gems(db: Session, limit: int = 20) -> list[MovieCard]:
 
 
 @router.get("/{movie_id}", response_model=MovieDetail)
-def get_movie(movie_id: int, response: Response, db: Session = Depends(get_db)):
+def get_movie(movie_id: int, response: Response, db: Session = Depends(get_catalogue)):
     """Full record for one title."""
     movie = db.get(Movie, movie_id)
     if movie is None:
@@ -442,7 +442,7 @@ async def get_similar_movies(
     movie_id: int,
     response: Response,
     limit: int = Query(12, ge=1, le=40),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_catalogue),
 ):
     """Similar titles, blending collaborative neighbourhood and content signal."""
     if db.get(Movie, movie_id) is None:

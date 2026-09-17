@@ -1,13 +1,21 @@
-"""Authentication endpoints."""
+"""Authentication endpoints.
+
+Both write endpoints are rate limited per client address. Login is the obvious
+case; registration is limited too because an unlimited account-creation endpoint
+against a 500 MB free-tier database is a storage exhaustion button, and each call
+costs a bcrypt hash.
+"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.auth_helper import create_access_token, get_current_user, get_password_hash, verify_password
+from app.api.security import enforce, login_limiter, register_limiter
 from app.config.settings import settings
 from app.database.connection import get_db
 from app.database.models import User
@@ -32,12 +40,14 @@ def _issue(user: User) -> dict:
 
 
 @router.post("/register", response_model=AuthResult, status_code=status.HTTP_201_CREATED)
-def register(payload: UserCreate, db: Session = Depends(get_db)):
+def register(request: Request, payload: UserCreate, db: Session = Depends(get_db)):
     """Creates an account and signs the user straight in.
 
     Returning a token here means the client does not have to immediately POST to
     ``/login`` with credentials it already has.
     """
+    enforce(register_limiter, request, "registration")
+
     # Usernames and emails are compared case-insensitively so "Arya" and "arya"
     # cannot both be registered and then confuse login.
     clash = db.execute(
@@ -58,24 +68,47 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
         password_hash=get_password_hash(payload.password),
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two simultaneous registrations can both pass the clash check above; the
+        # unique index is what actually decides, so translate its error rather
+        # than returning a 500 to the loser of the race.
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username or email is already registered",
+        ) from None
     db.refresh(user)
     return _issue(user)
 
 
 @router.post("/login", response_model=AuthResult)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+def login(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
     """Exchanges credentials for a bearer token."""
+    key = enforce(login_limiter, request, "login")
+
     user = db.execute(
         select(User).where(func.lower(User.username) == form_data.username.lower())
     ).scalar_one_or_none()
 
     if user is None or not verify_password(form_data.password, user.password_hash):
+        # One message for both branches. Distinguishing "no such user" from "wrong
+        # password" turns the login form into an account enumerator.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Only failures should count against the budget, or a shared address -- an
+    # office, a campus, a mobile carrier's NAT -- locks itself out through ordinary
+    # successful use.
+    login_limiter.reset(key)
     return _issue(user)
 
 

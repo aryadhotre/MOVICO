@@ -22,7 +22,7 @@ import re
 from datetime import datetime
 from typing import Any, Generic, List, Optional, TypeVar
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 T = TypeVar("T")
 
@@ -174,13 +174,52 @@ class TokenData(BaseModel):
     username: Optional[str] = None
 
 
+#: Passwords that a dictionary attack tries in its first few hundred guesses.
+#: Length alone does not save "password123"; this is the short list that a length
+#: rule most commonly lets through.
+_COMMON_PASSWORDS = {
+    "password", "password1", "password123", "passw0rd", "12345678", "123456789",
+    "1234567890", "qwertyuiop", "qwerty123", "iloveyou", "welcome1", "admin123",
+    "letmein1", "abc12345", "football", "baseball", "sunshine", "princess",
+    "monkey12", "trustno1", "changeme", "starwars", "whatever", "superman",
+}
+
+
 class UserBase(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
 
+    @field_validator("username")
+    @classmethod
+    def _clean_username(cls, value: str) -> str:
+        """Restricts usernames to characters that cannot be confused or injected.
+
+        Without this, a username can contain whitespace, control characters or
+        right-to-left overrides -- so two visually identical accounts can exist,
+        and a display of the name can be made to lie about which one it is.
+        """
+        value = value.strip()
+        if not re.fullmatch(r"[A-Za-z0-9._-]{3,50}", value):
+            raise ValueError(
+                "Username may contain only letters, numbers, dots, underscores and hyphens"
+            )
+        return value
+
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=6)
+    # 8 is the NIST SP 800-63B floor. The upper bound is bcrypt's: it reads only
+    # the first 72 bytes, so accepting more would silently ignore the rest and
+    # make two different long passwords interchangeable.
+    password: str = Field(..., min_length=8, max_length=72)
+
+    @field_validator("password")
+    @classmethod
+    def _reject_weak(cls, value: str) -> str:
+        if value.lower() in _COMMON_PASSWORDS:
+            raise ValueError("That password is too common. Choose something less guessable.")
+        if len(set(value)) < 4:
+            raise ValueError("Password is too repetitive. Use a greater variety of characters.")
+        return value
 
 
 class UserResponse(UserBase):

@@ -1,47 +1,80 @@
 # Render blueprint for the MOVICO API.
 #
-# Deliberately a single web service with a persistent disk, not a web service plus
-# Postgres plus Redis:
+# One web service, no disk, no Redis, no Render Postgres.
 #
-# * The catalogue is read-mostly and the models are numpy artifacts on disk, so
-#   SQLite on a mounted disk is both faster and simpler than a network database.
-# * The in-process cache beats Redis for a single instance — no serialisation and
-#   no network hop — so Redis would add a dependency and a cost for nothing.
+# * **No disk.** Persistent disks are not offered on the free instance type, so
+#   the catalogue and the model artifacts are baked into the image at build time
+#   instead (see the Dockerfile). Nothing the container writes survives a deploy,
+#   which is fine: the only mutable data is user accounts, and those live in
+#   Supabase.
 #
-# Both choices keep this inside free tiers, which is the constraint.
+# * **No Render Postgres.** A free Render database is deleted after 30 days.
+#   Supabase's free tier has no such expiry, so DATABASE_URL points there.
+#
+# * **No Redis.** For a single instance the in-process TTL cache is strictly
+#   better -- no serialisation, no network hop -- so Redis would add a dependency
+#   and a bill for nothing.
+#
+# Free instances sleep after 15 minutes of inactivity and take ~50s to wake. The
+# frontend handles that with a warming state rather than a spinner that looks
+# broken.
 services:
   - type: web
     name: movico-api
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
+    region: oregon
     healthCheckPath: /api/system/health
+    # Only rebuild when something the API is made of changes. Without this, every
+    # frontend commit triggers a full Docker build -- pip-compiling scipy and
+    # re-pulling the artifact bundle -- against a 500 minute/month free budget.
+    buildFilter:
+      paths:
+        - app/**
+        - scripts/**
+        - requirements.txt
+        - Dockerfile
+        - render.yaml
     envVars:
       - key: APP_ENV
         value: production
       - key: DEBUG
         value: "false"
-      - key: USE_SQLITE
-        value: "true"
       - key: REDIS_ENABLED
         value: "false"
       - key: DATA_DIR
-        value: /var/data
+        value: /workspace/data
       - key: MODELS_DIR
-        value: /var/data/models_checkpoint
-      # Generated once by Render and kept; regenerating it would invalidate every
-      # issued token.
+        value: /workspace/models_checkpoint
+      # Catalogue reads are memory-mapped. 64 MB covers the hot index pages; the
+      # 256 MB default would sit on top of ~250 MB of model artifacts and keep a
+      # 512 MB instance in constant reclaim.
+      - key: SQLITE_MMAP_MB
+        value: "64"
+      # Generated once by Render and kept. Regenerating it invalidates every
+      # token that has been issued, signing every user out.
       - key: SECRET_KEY
         generateValue: true
-      # Set these in the Render dashboard, not here.
+
+      # ---- set these in the dashboard; they never belong in the repository ----
+      # Supabase connection string, transaction pooler, port 6543.
+      - key: DATABASE_URL
+        sync: false
       - key: TMDB_API_KEY
         sync: false
+      # Leave blank to disable the retrain/reimport endpoints entirely, which is
+      # the right setting unless you are actively administering the deployment.
       - key: ADMIN_TOKEN
         sync: false
+      # The deployed frontend origin, e.g. https://movico.vercel.app
       - key: CORS_ORIGINS
         sync: false
-    disks:
-      - name: movico-data
-        mountPath: /var/data
-        # Holds movico.db plus the trained artifacts (~90MB of model pickles).
-        sizeGB: 2
+      # Vercel project slug, so preview deployments are allowed without opening
+      # the API to every *.vercel.app in existence.
+      - key: VERCEL_PROJECT
+        sync: false
+      - key: ARTIFACTS_URL
+        sync: false
+      - key: ARTIFACTS_SHA256
+        sync: false

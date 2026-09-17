@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.auth_helper import get_current_user
-from app.database.connection import get_db
+from app.database.connection import get_catalogue, get_db
 from app.database.models import User
 from app.database.schemas import RecommendationResponse
 from app.services.recommender import recommender
@@ -35,6 +35,7 @@ async def get_recommendations(
     explain: bool = Query(True, description="Include per-item attribution"),
     bypass_cache: bool = Query(False),
     db: Session = Depends(get_db),
+    catalogue: Session = Depends(get_catalogue),
     current_user: User = Depends(get_current_user),
 ):
     """Ranks the catalogue for the authenticated user.
@@ -47,6 +48,7 @@ async def get_recommendations(
     try:
         return await recommender.recommend(
             db=db,
+            catalogue=catalogue,
             user_id=current_user.id,
             limit=limit,
             diversity=diversity,

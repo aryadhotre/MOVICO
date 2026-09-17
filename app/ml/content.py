@@ -41,8 +41,8 @@ from typing import Iterable, Optional, Sequence
 
 import numpy as np
 from scipy.sparse import csr_matrix, hstack
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.preprocessing import normalize
+
+from app.ml.linalg import row_normalize
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +122,10 @@ class ContentModel:
         self._movie_id_to_index: Optional[dict[int, int]] = None
 
     def fit(self, rows: Sequence[dict]) -> "ContentModel":
+        # Imported here, not at module scope: fitting happens offline in the
+        # training pipeline, and the API must never pay scikit-learn's 84 MB.
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
         self.movie_ids = np.array([int(row["id"]) for row in rows], dtype=np.int64)
         self._movie_id_to_index = None
         documents = build_channel_documents(rows)
@@ -157,7 +161,7 @@ class ContentModel:
 
             # Normalising inside the channel is the whole point: it decouples a
             # channel's influence from its verbosity.
-            block = normalize(block) * np.sqrt(weight)
+            block = row_normalize(block) * np.sqrt(weight)
             blocks.append(block.astype(np.float32))
             self.vectorizers[channel] = vectorizer
             logger.info(
@@ -168,7 +172,7 @@ class ContentModel:
         if not blocks:
             raise ValueError("No usable content channels; is the catalogue enriched?")
 
-        self.matrix = normalize(hstack(blocks).tocsr()).astype(np.float32)
+        self.matrix = row_normalize(hstack(blocks).tocsr()).astype(np.float32)
         logger.info(
             "Content matrix: %s titles x %s features (%s nnz)",
             f"{self.matrix.shape[0]:,}", f"{self.matrix.shape[1]:,}", f"{self.matrix.nnz:,}",
@@ -190,9 +194,9 @@ class ContentModel:
             return np.zeros(self.matrix.shape[0], dtype=np.float32)
 
         weight_vector = np.asarray(weights, dtype=np.float32).reshape(1, -1)
-        centroid = weight_vector @ self.matrix[indices]
-        centroid = normalize(csr_matrix(centroid))
-        return np.asarray(self.matrix @ centroid.T.toarray(), dtype=np.float32).ravel()
+        centroid = np.asarray(weight_vector @ self.matrix[indices], dtype=np.float32).ravel()
+        centroid = row_normalize(centroid)
+        return np.asarray(self.matrix @ centroid, dtype=np.float32).ravel()
 
     def similar_items(self, index: int, limit: int = 12) -> list[tuple[int, float]]:
         if self.matrix is None:
@@ -220,7 +224,9 @@ class ContentModel:
                     "max_features": self.max_features,
                     "matrix": self.matrix,
                     "movie_ids": self.movie_ids,
-                    "vectorizers": self.vectorizers,
+                    # Deliberately not persisted: unpickling a TfidfVectorizer
+                    # requires scikit-learn, and nothing at serving time
+                    # transforms new text. Refitting rebuilds them anyway.
                 },
                 handle,
                 protocol=pickle.HIGHEST_PROTOCOL,
@@ -235,7 +241,6 @@ class ContentModel:
         model = cls(weights=state["weights"], max_features=state["max_features"])
         model.matrix = state["matrix"]
         model.movie_ids = state["movie_ids"]
-        model.vectorizers = state.get("vectorizers", {})
         return model
 
 

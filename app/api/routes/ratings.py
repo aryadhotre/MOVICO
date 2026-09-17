@@ -13,6 +13,12 @@ Three contract bugs from the previous version are fixed here:
 
 Every mutation invalidates the user's cached recommendations, so the next request
 reflects the new rating instead of serving a stale list.
+
+Ratings and watchlists live in the user database while films live in the
+catalogue, so nothing here can join the two in one statement. Each listing reads
+its rows, then hydrates the films by primary key in a second query — an indexed
+lookup of at most a page of ids, which costs less than the join it replaces would
+have over the network.
 """
 
 from __future__ import annotations
@@ -24,7 +30,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.api.auth_helper import get_current_user
-from app.database.connection import get_db
+from app.database.connection import get_catalogue, get_db
 from app.database.models import Movie, Rating, User, Watchlist
 from app.database.schemas import (
     GenreCount,
@@ -45,15 +51,37 @@ from app.services.cache import cache
 router = APIRouter(prefix="/ratings", tags=["User Actions"])
 
 
+def _hydrate(catalogue: Session, movie_ids: list[int]) -> dict[int, Movie]:
+    """Fetches full film rows for a page of ids, in one query."""
+    if not movie_ids:
+        return {}
+    rows = catalogue.execute(select(Movie).where(Movie.id.in_(set(movie_ids)))).scalars().all()
+    return {row.id: row for row in rows}
+
+
+def _hydrate_columns(catalogue: Session, movie_ids: list[int], columns) -> dict[int, object]:
+    """Same, but only the named columns.
+
+    The taste summary touches every film a user has rated, which can be hundreds
+    of rows; pulling plot text and cast blobs for all of them to read two fields
+    would dominate the request.
+    """
+    if not movie_ids:
+        return {}
+    rows = catalogue.execute(select(*columns).where(Movie.id.in_(set(movie_ids)))).all()
+    return {row.id: row for row in rows}
+
+
 @router.post("", response_model=RatingResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=RatingResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 def submit_rating(
     payload: RatingCreate,
     db: Session = Depends(get_db),
+    catalogue: Session = Depends(get_catalogue),
     current_user: User = Depends(get_current_user),
 ):
     """Creates or updates the current user's rating for a movie."""
-    if db.get(Movie, payload.movie_id) is None:
+    if catalogue.get(Movie, payload.movie_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found")
 
     existing = db.execute(
@@ -81,6 +109,7 @@ def submit_rating(
 def submit_ratings_batch(
     ratings: list[RatingCreate] = Body(..., max_length=100),
     db: Session = Depends(get_db),
+    catalogue: Session = Depends(get_catalogue),
     current_user: User = Depends(get_current_user),
 ):
     """Records several ratings at once.
@@ -91,7 +120,7 @@ def submit_ratings_batch(
     """
     wanted = {item.movie_id for item in ratings}
     existing_movies = set(
-        db.execute(select(Movie.id).where(Movie.id.in_(wanted))).scalars().all()
+        catalogue.execute(select(Movie.id).where(Movie.id.in_(wanted))).scalars().all()
     )
 
     current = {
@@ -144,30 +173,35 @@ def get_rating_history(
     page: int = Query(1, ge=1),
     page_size: int = Query(24, ge=1, le=100),
     db: Session = Depends(get_db),
+    catalogue: Session = Depends(get_catalogue),
     current_user: User = Depends(get_current_user),
 ):
-    """The user's ratings, newest first, joined to their movies."""
+    """The user's ratings, newest first, hydrated with their films."""
     total = db.execute(
         select(func.count(Rating.id)).where(Rating.user_id == current_user.id)
     ).scalar_one()
 
     rows = db.execute(
-        select(Rating.rating, Rating.timestamp, Movie)
-        .join(Movie, Movie.id == Rating.movie_id)
+        select(Rating.movie_id, Rating.rating, Rating.timestamp)
         .where(Rating.user_id == current_user.id)
         .order_by(Rating.timestamp.desc(), Rating.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
 
+    films = _hydrate(catalogue, [row.movie_id for row in rows])
+
     return PaginatedRatedMovies(
         items=[
             RatedMovie(
                 rating=row.rating,
                 rated_at=row.timestamp,
-                movie=MovieCard.model_validate(row.Movie),
+                movie=MovieCard.model_validate(films[row.movie_id]),
             )
             for row in rows
+            # A rating can outlive its film if the catalogue is rebuilt smaller;
+            # skip rather than 500.
+            if row.movie_id in films
         ],
         pagination=build_pagination_meta(page, page_size, int(total)),
     )
@@ -193,14 +227,24 @@ def get_my_ratings_map(
 @router.get("/stats", response_model=UserStats)
 def get_rating_stats(
     db: Session = Depends(get_db),
+    catalogue: Session = Depends(get_catalogue),
     current_user: User = Depends(get_current_user),
 ):
     """Taste summary for the profile page."""
-    rows = db.execute(
-        select(Rating.rating, Movie.genres, Movie.release_year)
-        .join(Movie, Movie.id == Rating.movie_id)
-        .where(Rating.user_id == current_user.id)
+    rated = db.execute(
+        select(Rating.movie_id, Rating.rating).where(Rating.user_id == current_user.id)
     ).all()
+
+    films = _hydrate_columns(
+        catalogue,
+        [row.movie_id for row in rated],
+        (Movie.id, Movie.genres, Movie.release_year),
+    )
+    rows = [
+        (row.rating, films[row.movie_id].genres, films[row.movie_id].release_year)
+        for row in rated
+        if row.movie_id in films
+    ]
 
     watchlist_count = db.execute(
         select(func.count(Watchlist.id)).where(Watchlist.user_id == current_user.id)
@@ -246,10 +290,11 @@ def get_rating_stats(
 def add_to_watchlist(
     payload: WatchlistCreate,
     db: Session = Depends(get_db),
+    catalogue: Session = Depends(get_catalogue),
     current_user: User = Depends(get_current_user),
 ):
     """Adds a movie to the watchlist. Idempotent."""
-    movie = db.get(Movie, payload.movie_id)
+    movie = catalogue.get(Movie, payload.movie_id)
     if movie is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found")
 
@@ -276,6 +321,7 @@ def get_watchlist(
     page: int = Query(1, ge=1),
     page_size: int = Query(24, ge=1, le=100),
     db: Session = Depends(get_db),
+    catalogue: Session = Depends(get_catalogue),
     current_user: User = Depends(get_current_user),
 ):
     """The user's watchlist, newest first."""
@@ -284,18 +330,20 @@ def get_watchlist(
     ).scalar_one()
 
     rows = db.execute(
-        select(Watchlist.added_at, Movie)
-        .join(Movie, Movie.id == Watchlist.movie_id)
+        select(Watchlist.movie_id, Watchlist.added_at)
         .where(Watchlist.user_id == current_user.id)
         .order_by(Watchlist.added_at.desc(), Watchlist.id.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
 
+    films = _hydrate(catalogue, [row.movie_id for row in rows])
+
     return PaginatedWatchlist(
         items=[
-            WatchlistEntry(added_at=row.added_at, movie=MovieCard.model_validate(row.Movie))
+            WatchlistEntry(added_at=row.added_at, movie=MovieCard.model_validate(films[row.movie_id]))
             for row in rows
+            if row.movie_id in films
         ],
         pagination=build_pagination_meta(page, page_size, int(total)),
     )

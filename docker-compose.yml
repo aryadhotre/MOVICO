@@ -4,6 +4,13 @@
 # Postgres and Redis profiles are available for exercising those code paths, but
 # they are opt-in because neither is needed to run the project:
 #   docker compose --profile postgres --profile redis up
+#
+# The postgres profile is how the production database split is rehearsed locally.
+# Start it, then point the API's user database at it while the catalogue stays on
+# the mounted SQLite file -- the same arrangement as Render plus Supabase:
+#   docker compose --profile postgres up -d postgres
+#   DATABASE_URL=postgresql://movico_user:movico_pass@postgres:5432/movico_db \
+#     docker compose up api
 
 services:
   api:
@@ -19,7 +26,9 @@ services:
       TMDB_API_KEY: ${TMDB_API_KEY:?set TMDB_API_KEY in .env}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
-      USE_SQLITE: "true"
+      # Blank keeps accounts in the same SQLite file as the catalogue. Set it to
+      # the postgres service above to rehearse the production split.
+      DATABASE_URL: ${DATABASE_URL:-}
       REDIS_ENABLED: "false"
       DATA_DIR: /workspace/data
       MODELS_DIR: /workspace/models_checkpoint

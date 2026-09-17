@@ -15,7 +15,7 @@ os.environ["REDIS_ENABLED"] = "false"
 os.environ["ADMIN_TOKEN"] = "test-admin-token"
 
 from app.api.auth_helper import get_password_hash  # noqa: E402
-from app.database.connection import Base, get_db  # noqa: E402
+from app.database.connection import Base, get_catalogue, get_db  # noqa: E402
 from app.database.models import Movie, Rating, User, Watchlist  # noqa: E402
 from app.main import app  # noqa: E402
 
@@ -122,10 +122,19 @@ def db():
 
 @pytest.fixture(scope="function")
 def client(db):
+    """A client whose catalogue and user database are the same in-memory session.
+
+    Production splits them across two engines, but pointing both overrides at one
+    session is what the split is designed to tolerate -- the route code never joins
+    across them, so it behaves identically whether they are one database or two.
+    Using two in-memory engines here would only test SQLAlchemy.
+    """
+
     def override_get_db():
         yield db
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_catalogue] = override_get_db
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

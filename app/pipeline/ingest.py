@@ -36,10 +36,18 @@ CATALOGUE_COLUMNS = (
 
 
 def sqlite_path() -> str:
-    """Resolves the on-disk path of the configured SQLite database."""
-    url = settings.database_url
+    """Resolves the on-disk path of the **catalogue**.
+
+    Every raw-sqlite3 caller in the codebase -- this pipeline, the enrichment
+    pass, and the ranker's catalogue load -- works on films, which live in the
+    catalogue. Resolving from ``settings.database_url`` instead would follow
+    ``DATABASE_URL`` to the user database: harmless locally, where both are the
+    same file, and fatal in production, where it is a Postgres URL and this raises
+    on engine load so every recommendation returns 503.
+    """
+    url = settings.catalogue_url
     if not url.startswith("sqlite"):
-        raise RuntimeError("Direct sqlite3 access requires a SQLite DATABASE_URL.")
+        raise RuntimeError("The catalogue must be SQLite for direct sqlite3 access.")
     return url.split("sqlite:///", 1)[1]
 
 

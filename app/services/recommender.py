@@ -8,6 +8,10 @@ it immediately.
 The engine's numeric work is synchronous numpy, which holds the GIL. Running it
 directly inside an async handler would stall every other in-flight request for the
 duration, so it is dispatched to a worker thread.
+
+Two sessions come in, not one: the taste profile and the history log live in the
+user database, the films themselves in the catalogue. They are separate engines,
+so hydration cannot be folded into the profile query.
 """
 
 from __future__ import annotations
@@ -48,11 +52,11 @@ def load_profile(db: Session, user_id: int) -> tuple[list[tuple[int, float]], li
     return [(int(mid), float(value)) for mid, value in ratings], [int(m) for m in watchlist]
 
 
-def hydrate(db: Session, movie_ids: Sequence[int]) -> dict[int, Movie]:
+def hydrate(catalogue: Session, movie_ids: Sequence[int]) -> dict[int, Movie]:
     """Fetches every movie for a result page in one query, preserving nothing else."""
     if not movie_ids:
         return {}
-    rows = db.execute(select(Movie).where(Movie.id.in_(list(movie_ids)))).scalars().all()
+    rows = catalogue.execute(select(Movie).where(Movie.id.in_(list(movie_ids)))).scalars().all()
     return {row.id: row for row in rows}
 
 
@@ -106,6 +110,7 @@ class RecommenderService:
     async def recommend(
         self,
         db: Session,
+        catalogue: Session,
         user_id: int,
         limit: int = 20,
         diversity: float = 1.0,
@@ -145,13 +150,13 @@ class RecommenderService:
             min_year,
         )
 
-        movies = hydrate(db, [item.movie_id for item in scored])
+        movies = hydrate(catalogue, [item.movie_id for item in scored])
 
         titles: dict[int, str] = {}
         profile_genres: dict[int, set[str]] = {}
         referenced = {mid for item in scored for mid, _ in item.because_of}
         if referenced and explain:
-            for row in hydrate(db, list(referenced)).values():
+            for row in hydrate(catalogue, list(referenced)).values():
                 titles[row.id] = split_title(row.title)[0]
                 profile_genres[row.id] = set(split_genres(row.genres))
 
@@ -208,14 +213,14 @@ class RecommenderService:
             logger.warning("Could not write recommendation history: %s", exc)
             db.rollback()
 
-    async def similar(self, db: Session, movie_id: int, limit: int = 12) -> list[MovieCard]:
+    async def similar(self, catalogue: Session, movie_id: int, limit: int = 12) -> list[MovieCard]:
         key = f"similar:{movie_id}:{limit}"
         cached = cache.get(key)
         if cached is not None:
             return [MovieCard(**item) for item in cached]
 
         scored = await asyncio.to_thread(engine.similar, movie_id, limit)
-        movies = hydrate(db, [item.movie_id for item in scored])
+        movies = hydrate(catalogue, [item.movie_id for item in scored])
         cards = [
             MovieCard.model_validate(movies[item.movie_id])
             for item in scored

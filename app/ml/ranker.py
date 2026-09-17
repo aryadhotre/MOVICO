@@ -32,7 +32,8 @@ from typing import Iterable, Optional, Sequence
 
 import numpy as np
 from scipy.sparse import csr_matrix
-from sklearn.preprocessing import normalize
+
+from app.ml.linalg import row_normalize
 
 from app.config.settings import settings
 from app.ml.content import ContentModel
@@ -227,7 +228,7 @@ class RecommendationEngine:
                 genre_cols.append(genre_lookup[genre])
 
         self.movie_index = {int(mid): i for i, mid in enumerate(self.movie_ids)}
-        self.genre_matrix = normalize(
+        self.genre_matrix = row_normalize(
             csr_matrix(
                 (np.ones(len(genre_rows), dtype=np.float32), (genre_rows, genre_cols)),
                 shape=(count, max(len(genre_lookup), 1)),
