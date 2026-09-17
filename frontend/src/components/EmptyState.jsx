@@ -8,20 +8,20 @@ import { Link } from 'react-router-dom';
  */
 export default function EmptyState({ icon: Icon, title, description, action }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/[0.09] px-6 py-20 text-center">
+    <div className="flex flex-col items-center justify-center border border-dashed border-print-100/12 px-6 py-24 text-center">
       {Icon && (
-        <span className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.04] text-white/30">
-          <Icon className="h-6 w-6" strokeWidth={1.6} />
+        <span className="mb-6 flex h-12 w-12 items-center justify-center border border-print-100/12 text-print-500">
+          <Icon className="h-5 w-5" strokeWidth={1.5} />
         </span>
       )}
-      <h3 className="text-lg font-semibold text-white">{title}</h3>
+      <h3 className="title-card text-lg text-print-50">{title}</h3>
       {description && (
-        <p className="mt-2 max-w-sm text-pretty text-sm leading-relaxed text-white/45">
+        <p className="mt-3 max-w-sm text-pretty text-sm leading-relaxed text-print-400">
           {description}
         </p>
       )}
       {action && (
-        <Link to={action.to} className="btn-primary mt-7 px-5 py-2.5">
+        <Link to={action.to} className="btn-primary mt-8">
           {action.label}
         </Link>
       )}

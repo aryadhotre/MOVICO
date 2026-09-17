@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Check, EyeOff, Loader2, Sparkles } from 'lucide-react';
+import { ArrowRight, Check, EyeOff, Loader2 } from 'lucide-react';
 import Poster from '../components/Poster';
 import RatingStars from '../components/RatingStars';
 import Logo from '../components/Logo';
@@ -56,19 +56,19 @@ export default function Onboarding() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-white/[0.06] bg-ink-950/85 backdrop-blur-xl">
+      <header className="sticky top-0 z-40 border-b border-print-100/[0.08] bg-film-950/90 backdrop-blur-xl">
         <div className="mx-auto max-w-6xl px-5 py-4 sm:px-6">
           <div className="flex items-center justify-between gap-4">
             <Logo size={26} />
             <div className="flex items-center gap-4">
-              <span className="hidden text-2xs tabular-nums text-white/45 sm:inline">
-                {count} of {TARGET} rated
+              <span className="hidden font-mono text-2xs tabular-nums text-print-400 sm:inline">
+                {String(count).padStart(2, '0')} / {TARGET}
               </span>
               <button
                 type="button"
                 onClick={finish}
                 disabled={!canContinue || rateBatch.isPending}
-                className="btn-primary px-5 py-2"
+                className="btn-primary px-5 py-2.5 text-2xs"
               >
                 {rateBatch.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -80,9 +80,9 @@ export default function Onboarding() {
             </div>
           </div>
 
-          <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-white/[0.07]">
+          <div className="mt-4 h-[3px] w-full overflow-hidden bg-print-100/10">
             <div
-              className="h-full rounded-full bg-brand-gradient transition-[width] duration-500 ease-smooth"
+              className="h-full bg-tungsten-500 transition-[width] duration-500 ease-reel"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -91,14 +91,11 @@ export default function Onboarding() {
 
       <div className="mx-auto max-w-6xl px-5 py-10 sm:px-6">
         <div className="mb-10 max-w-2xl">
-          <p className="eyebrow mb-3 flex items-center gap-1.5 text-violet-400">
-            <Sparkles className="h-3 w-3" />
-            Building your taste profile
-          </p>
-          <h1 className="text-balance text-3xl font-semibold tracking-tightest text-white sm:text-4xl">
+          <p className="slate-label mb-4">Calibration reel</p>
+          <h1 className="title-card text-[clamp(1.9rem,5vw,3rem)] text-print-50">
             Rate the ones you&apos;ve seen
           </h1>
-          <p className="mt-3 text-pretty text-[15px] leading-relaxed text-white/50">
+          <p className="mt-5 max-w-lg text-pretty text-[15px] leading-relaxed text-print-300">
             Be honest — a film you disliked is as informative as one you loved. Hide anything
             you haven&apos;t watched and it will be replaced.
           </p>
@@ -126,10 +123,8 @@ export default function Onboarding() {
               return (
                 <div key={movie.id} className="group relative">
                   <div
-                    className={`relative overflow-hidden rounded-xl transition-all duration-300 ease-smooth ${
-                      rating
-                        ? 'ring-2 ring-violet-500 ring-offset-2 ring-offset-ink-950'
-                        : 'ring-0'
+                    className={`relative overflow-hidden border transition-all duration-300 ease-reel ${
+                      rating ? 'border-tungsten-500' : 'border-print-100/10'
                     }`}
                   >
                     <Poster
@@ -140,7 +135,7 @@ export default function Onboarding() {
                     />
 
                     {rating > 0 && (
-                      <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-violet-600 text-white shadow-glow">
+                      <span className="absolute right-0 top-0 flex h-6 w-6 items-center justify-center bg-tungsten-500 text-film-950">
                         <Check className="h-3.5 w-3.5" strokeWidth={3} />
                       </span>
                     )}
@@ -151,13 +146,13 @@ export default function Onboarding() {
                         setSkipped((current) => new Set(current).add(movie.id))
                       }
                       aria-label={`I haven't seen ${movie.title}`}
-                      className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-ink-950/75 text-white/65 opacity-0 backdrop-blur ring-1 ring-white/15 transition-opacity hover:text-white group-hover:opacity-100 focus-visible:opacity-100"
+                      className="absolute left-0 top-0 flex h-6 w-6 items-center justify-center bg-film-950/85 text-print-300 opacity-0 backdrop-blur transition-opacity hover:text-tungsten-400 group-hover:opacity-100 focus-visible:opacity-100"
                     >
                       <EyeOff className="h-3 w-3" />
                     </button>
                   </div>
 
-                  <p className="clamp-2 mt-2 text-2xs font-medium leading-snug text-white/70">
+                  <p className="clamp-2 mt-2.5 font-display text-2xs uppercase leading-snug tracking-slate text-print-200">
                     {movie.title}
                   </p>
 
@@ -187,7 +182,7 @@ export default function Onboarding() {
               type="button"
               onClick={() => fetchNextPage()}
               disabled={isFetchingNextPage}
-              className="btn-secondary px-6 py-2.5"
+              className="btn-secondary"
             >
               {isFetchingNextPage && <Loader2 className="h-4 w-4 animate-spin" />}
               Show more films
@@ -195,9 +190,9 @@ export default function Onboarding() {
           </div>
         )}
 
-        <p className="mt-12 text-center text-2xs text-white/30">
+        <p className="tech mt-14 text-center normal-case">
           You can always{' '}
-          <Link to="/app" className="text-white/50 underline underline-offset-2 hover:text-white">
+          <Link to="/app" className="text-print-200 underline underline-offset-4 hover:text-tungsten-400">
             skip for now
           </Link>{' '}
           and rate films as you browse.

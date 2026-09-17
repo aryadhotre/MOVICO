@@ -59,7 +59,7 @@ export default function RatingStars({
               <Star
                 size={size}
                 strokeWidth={1.6}
-                className="absolute inset-0 text-white/20"
+                className="absolute inset-0 text-print-100/20"
               />
               {fill > 0 && (
                 <span
@@ -69,7 +69,7 @@ export default function RatingStars({
                   <Star
                     size={size}
                     strokeWidth={1.6}
-                    className="text-amber-500"
+                    className="text-tungsten-500"
                     style={{ fill: 'currentColor' }}
                   />
                 </span>
@@ -107,7 +107,7 @@ export default function RatingStars({
       </div>
 
       {showValue && shown > 0 && (
-        <span className="text-xs font-semibold tabular-nums text-white/70">
+        <span className="font-mono text-2xs tabular-nums text-print-300">
           {shown.toFixed(1)}
         </span>
       )}

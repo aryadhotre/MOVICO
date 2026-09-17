@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, RefreshCw, Shuffle, Sparkles, SlidersHorizontal, Star } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Shuffle, SlidersHorizontal, Star } from 'lucide-react';
 import MovieCard from '../components/MovieCard';
 import ExplanationCard from '../components/ExplanationCard';
 import EmptyState from '../components/EmptyState';
@@ -25,9 +25,9 @@ function withMatchScores(movies) {
 function Slider({ label, hint, value, onChange, min = 0, max = 1, step = 0.1 }) {
   return (
     <label className="block">
-      <span className="flex items-center justify-between text-2xs font-medium text-white/60">
+      <span className="tech flex items-center justify-between">
         {label}
-        <span className="tabular-nums text-white/35">{Math.round(value * 100)}%</span>
+        <span className="tabular-nums text-tungsten-500">{Math.round(value * 100)}%</span>
       </span>
       <input
         type="range"
@@ -36,15 +36,13 @@ function Slider({ label, hint, value, onChange, min = 0, max = 1, step = 0.1 }) 
         step={step}
         value={value}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="mt-2 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09]
+        className="mt-3 h-[3px] w-full cursor-pointer appearance-none bg-print-100/12
                    [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5
-                   [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full
-                   [&::-webkit-slider-thumb]:bg-violet-500 [&::-webkit-slider-thumb]:shadow-glow
+                   [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:bg-tungsten-500
                    [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:w-3.5
-                   [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0
-                   [&::-moz-range-thumb]:bg-violet-500"
+                   [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-tungsten-500"
       />
-      {hint && <span className="mt-1.5 block text-2xs leading-relaxed text-white/30">{hint}</span>}
+      {hint && <span className="mt-2 block font-mono text-[10px] leading-relaxed text-print-500">{hint}</span>}
     </label>
   );
 }
@@ -79,17 +77,17 @@ export default function Recommendations() {
     const untrained = error.status === 503;
     return (
       <div className="mx-auto max-w-2xl px-5 py-20">
-        <div className="card-hairline p-8 text-center">
-          <AlertTriangle className="mx-auto h-8 w-8 text-amber-500" strokeWidth={1.6} />
-          <h1 className="mt-4 text-xl font-semibold text-white">
+        <div className="panel p-10 text-center">
+          <AlertTriangle className="mx-auto h-8 w-8 text-tungsten-500" strokeWidth={1.5} />
+          <h1 className="title-card mt-6 text-xl text-print-50">
             {untrained ? 'The model is not loaded yet' : 'Could not load recommendations'}
           </h1>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-white/50">
+          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-print-400">
             {untrained
               ? 'The recommendation engine has no trained artifacts on disk. Run the training pipeline, then reload.'
               : error.message}
           </p>
-          <button type="button" onClick={() => refetch()} className="btn-secondary mt-6 px-5 py-2.5">
+          <button type="button" onClick={() => refetch()} className="btn-secondary mt-8">
             <RefreshCw className="h-4 w-4" />
             Try again
           </button>
@@ -103,16 +101,13 @@ export default function Recommendations() {
       <header className="mb-8">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="eyebrow mb-2 flex items-center gap-1.5 text-violet-400">
-              <Sparkles className="h-3 w-3" />
-              {data?.strategy === 'cold_start' ? 'Warming up' : 'Hybrid engine'}
+            <p className="slate-label mb-3">
+              {data?.strategy === 'cold_start' ? 'Calibrating' : 'Hybrid engine'}
             </p>
-            <h1 className="text-3xl font-semibold tracking-tightest text-white">For you</h1>
-            <p className="mt-1.5 text-sm text-white/45">
+            <h1 className="title-card text-3xl text-print-50">Selected for you</h1>
+            <p className="tech mt-3 normal-case">
               {data
-                ? `${movies.length} films · computed in ${data.execution_ms.toFixed(0)}ms${
-                    data.cached ? ' (cached)' : ''
-                  }`
+                ? `${movies.length} films · ${data.execution_ms.toFixed(0)}ms${data.cached ? ' · cached' : ''}`
                 : 'Ranking the catalogue…'}
             </p>
           </div>
@@ -121,7 +116,7 @@ export default function Recommendations() {
             <button
               type="button"
               onClick={() => setShowControls((open) => !open)}
-              className={`btn-secondary px-4 py-2 text-sm ${showControls ? 'border-white/25' : ''}`}
+              className={`btn-secondary px-4 py-2.5 text-2xs ${showControls ? 'border-tungsten-500 text-tungsten-400' : ''}`}
               aria-expanded={showControls}
             >
               <SlidersHorizontal className="h-4 w-4" />
@@ -140,7 +135,7 @@ export default function Recommendations() {
         </div>
 
         {showControls && (
-          <div className="mt-5 grid gap-6 rounded-2xl border border-white/[0.07] bg-ink-900/50 p-5 sm:grid-cols-2">
+          <div className="panel mt-6 grid gap-7 p-6 sm:grid-cols-2">
             <Slider
               label="Diversity"
               hint="Higher spreads picks across genres instead of clustering on one."
@@ -155,7 +150,7 @@ export default function Recommendations() {
             />
 
             <div className="sm:col-span-2">
-              <span className="mb-2 block text-2xs font-medium text-white/60">Restrict to genre</span>
+              <span className="tech mb-3 block">Restrict to genre</span>
               <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
@@ -181,13 +176,13 @@ export default function Recommendations() {
       </header>
 
       {ratingCount < 5 && !isLoading && (
-        <div className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-violet-600/25 bg-violet-600/[0.07] px-5 py-4">
-          <p className="text-sm text-white/70">
-            <Star className="mr-1.5 inline h-3.5 w-3.5 text-amber-500" />
+        <div className="mb-10 flex flex-wrap items-center justify-between gap-4 border border-tungsten-500/30 bg-tungsten-500/[0.07] px-5 py-4">
+          <p className="text-sm text-print-300">
+            <Star className="mr-1.5 inline h-3.5 w-3.5 text-tungsten-500" />
             With {ratingCount} rating{ratingCount === 1 ? '' : 's'} these are mostly popular picks.
             Rate a few more to personalise them.
           </p>
-          <Link to="/onboarding" className="btn-primary px-4 py-2 text-sm">
+          <Link to="/onboarding" className="btn-primary px-5 py-2.5 text-2xs">
             Rate films
           </Link>
         </div>

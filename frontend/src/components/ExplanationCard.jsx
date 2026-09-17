@@ -1,25 +1,22 @@
 import { Link } from 'react-router-dom';
-import { Sparkles } from 'lucide-react';
 
-/** Human labels for the engine's internal score components. */
 const COMPONENT_LABELS = {
   ials: 'Taste match',
   item_knn: 'Similar films',
   content: 'Themes & crew',
-  quality: 'Critical standing',
+  quality: 'Standing',
 };
 
 /**
- * Renders why a film was recommended.
+ * Why a film was recommended, set as a continuity note.
  *
- * The bars show each model's standardised contribution to the blended score, and
- * `because_of` lists the films from the user's own profile that drove it. Both come
- * from the engine rather than being inferred here, so the panel cannot claim a
- * reason the model did not actually use.
+ * The bars are each model's standardised contribution to the blended score, and
+ * `because_of` lists the films from the user's own history that drove it. Both
+ * come from the engine, so the panel cannot claim a reason the model did not use.
  *
- * Contributions are z-scores, so they are signed — a negative value means the film
- * scored below average on that signal. Only positive ones are worth showing, since
- * a negative bar has no useful reading for a user.
+ * Contributions are z-scores and therefore signed. Only positive ones are shown:
+ * a negative bar means the film scored below average on that signal, which has no
+ * useful reading as an explanation.
  */
 export default function ExplanationCard({ explanation, compact = false }) {
   if (!explanation) return null;
@@ -32,38 +29,33 @@ export default function ExplanationCard({ explanation, compact = false }) {
 
   if (compact) {
     return (
-      <p className="flex items-center gap-1.5 text-2xs text-white/45">
-        <Sparkles className="h-3 w-3 shrink-0 text-violet-400" />
+      <p className="flex items-center gap-2 border-l border-tungsten-500/50 pl-2.5 font-mono text-2xs text-print-400">
         <span className="truncate">{explanation.headline}</span>
       </p>
     );
   }
 
   return (
-    <div className="rounded-xl border border-white/[0.07] bg-white/[0.025] p-4">
-      <p className="flex items-center gap-2 text-sm font-medium text-white">
-        <Sparkles className="h-3.5 w-3.5 shrink-0 text-violet-400" />
+    <div className="border border-print-100/10 bg-film-900/60 p-4">
+      <p className="slate-label mb-3">Continuity note</p>
+      <p className="font-display text-sm uppercase tracking-slate text-print-100">
         {explanation.headline}
       </p>
 
       {explanation.because_of?.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {explanation.because_of.map((item) => (
-            <Link
-              key={item.movie_id}
-              to={`/movie/${item.movie_id}`}
-              className="chip transition-colors hover:border-white/25 hover:text-white"
-            >
+            <Link key={item.movie_id} to={`/movie/${item.movie_id}`} className="chip">
               {item.title}
-              <span className="tabular-nums text-white/35">{item.weight.toFixed(2)}</span>
+              <span className="tabular-nums text-print-500">{item.weight.toFixed(2)}</span>
             </Link>
           ))}
         </div>
       )}
 
       {explanation.shared_genres?.length > 0 && (
-        <p className="mt-3 text-2xs text-white/40">
-          Shared genres: {explanation.shared_genres.join(', ')}
+        <p className="tech mt-3 normal-case">
+          Shared: {explanation.shared_genres.join(', ')}
         </p>
       )}
 
@@ -71,16 +63,16 @@ export default function ExplanationCard({ explanation, compact = false }) {
         <div className="mt-4 space-y-2">
           {contributions.map(([key, value]) => (
             <div key={key} className="flex items-center gap-3">
-              <span className="w-28 shrink-0 text-2xs text-white/45">
+              <span className="w-24 shrink-0 font-mono text-[10px] uppercase tracking-wider text-print-500">
                 {COMPONENT_LABELS[key] ?? key}
               </span>
-              <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
+              <span className="h-[3px] flex-1 bg-print-100/10">
                 <span
-                  className="block h-full rounded-full bg-brand-gradient"
+                  className="block h-full bg-tungsten-500"
                   style={{ width: `${Math.round((value / total) * 100)}%` }}
                 />
               </span>
-              <span className="w-9 shrink-0 text-right text-2xs tabular-nums text-white/35">
+              <span className="w-8 shrink-0 text-right font-mono text-[10px] tabular-nums text-print-500">
                 {Math.round((value / total) * 100)}%
               </span>
             </div>

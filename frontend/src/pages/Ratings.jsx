@@ -47,7 +47,7 @@ export default function Ratings() {
   if (!isLoading && total === 0) {
     return (
       <div className="mx-auto max-w-[1500px] px-5 py-8 sm:px-6">
-        <h1 className="mb-8 text-3xl font-semibold tracking-tightest text-white">Your ratings</h1>
+        <h1 className="title-card mb-10 text-3xl text-print-50">Your ratings</h1>
         <EmptyState
           icon={Star}
           title="You haven't rated anything yet"
@@ -61,8 +61,9 @@ export default function Ratings() {
   return (
     <div className="mx-auto max-w-[1500px] px-5 py-8 sm:px-6">
       <header className="mb-6">
-        <h1 className="text-3xl font-semibold tracking-tightest text-white">Your ratings</h1>
-        <p className="mt-1.5 text-sm text-white/45">
+        <p className="slate-label mb-3">The log</p>
+        <h1 className="title-card text-3xl text-print-50">Your ratings</h1>
+        <p className="tech mt-3 normal-case">
           {total} film{total === 1 ? '' : 's'} rated
         </p>
 
@@ -80,7 +81,7 @@ export default function Ratings() {
         </div>
       </header>
 
-      <ul className="divide-y divide-white/[0.05]">
+      <ul className="divide-y divide-print-100/[0.07] border-y border-print-100/[0.07]">
         {isLoading
           ? Array.from({ length: 8 }, (_, index) => (
               <li key={index} className="flex items-center gap-4 py-3">
@@ -100,11 +101,11 @@ export default function Ratings() {
                 <div className="min-w-0 flex-1">
                   <Link
                     to={`/movie/${movie.id}`}
-                    className="block truncate text-sm font-medium text-white hover:text-violet-300"
+                    className="block truncate font-display text-sm uppercase tracking-slate text-print-100 hover:text-tungsten-400"
                   >
                     {movie.title}
                   </Link>
-                  <p className="mt-0.5 truncate text-2xs text-white/40">
+                  <p className="mt-1 truncate font-mono text-2xs tabular-nums text-print-500">
                     {movie.year && <span className="tabular-nums">{movie.year}</span>}
                     {movie.genres?.length > 0 && ` · ${movie.genres.slice(0, 2).join(', ')}`}
                     {ratedAt && ` · rated ${new Date(ratedAt).toLocaleDateString()}`}
@@ -125,7 +126,7 @@ export default function Ratings() {
                   type="button"
                   onClick={() => removeRating.mutate(movie.id)}
                   aria-label={`Remove your rating of ${movie.title}`}
-                  className="btn-ghost h-8 w-8 rounded-lg p-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                  className="btn-ghost h-8 w-8 p-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -134,15 +135,13 @@ export default function Ratings() {
       </ul>
 
       {!isLoading && visible.length === 0 && (
-        <p className="py-16 text-center text-sm text-white/35">
-          Nothing in this band yet.
-        </p>
+        <p className="tech py-20 text-center normal-case">Nothing in this band yet.</p>
       )}
 
       <div ref={sentinel} className="h-4" aria-hidden="true" />
       {isFetchingNextPage && (
         <div className="flex justify-center py-8">
-          <Loader2 className="h-5 w-5 animate-spin text-white/35" />
+          <Loader2 className="h-5 w-5 animate-spin text-tungsten-500" />
         </div>
       )}
     </div>

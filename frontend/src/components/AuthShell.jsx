@@ -1,35 +1,46 @@
 import { Link } from 'react-router-dom';
 import Logo from './Logo';
+import Perforations from './film/Perforations';
 
 /**
  * Split layout for sign-in and sign-up.
  *
- * The right panel is decorative and hidden below `lg`, so a phone gets the form at
- * full width instead of a squeezed two-column compromise.
+ * The right panel is a projection plate — a still frame with grain and a tungsten
+ * wash — separated from the form by a strip of sprocket holes. Hidden below `lg`
+ * so a phone gets the form at full width rather than a squeezed two-column
+ * compromise.
  */
 export default function AuthShell({ title, subtitle, children, footer, aside }) {
   return (
     <div className="flex min-h-screen">
-      <div className="flex w-full flex-col justify-center px-6 py-12 lg:w-[52%] lg:px-16">
+      <div className="flex w-full flex-col justify-center px-6 py-12 lg:w-[50%] lg:px-20">
         <div className="mx-auto w-full max-w-sm">
-          <Link to="/" className="mb-12 inline-flex" aria-label="MOVICO home">
-            <Logo size={30} />
+          <Link to="/" className="mb-14 inline-flex" aria-label="MOVICO home">
+            <Logo size={26} />
           </Link>
 
-          <h1 className="text-3xl font-semibold tracking-tightest text-white">{title}</h1>
-          {subtitle && <p className="mt-2.5 text-sm leading-relaxed text-white/50">{subtitle}</p>}
+          <p className="slate-label mb-3">{subtitle ? 'Access' : 'Welcome'}</p>
+          <h1 className="title-card text-3xl text-print-50">{title}</h1>
+          {subtitle && (
+            <p className="mt-4 text-sm leading-relaxed text-print-400">{subtitle}</p>
+          )}
 
-          <div className="mt-9">{children}</div>
+          <div className="mt-10">{children}</div>
 
-          {footer && <div className="mt-8 text-sm text-white/45">{footer}</div>}
+          {footer && <div className="mt-8 text-sm text-print-400">{footer}</div>}
         </div>
       </div>
 
-      <div className="relative hidden flex-1 overflow-hidden border-l border-white/[0.06] lg:block">
-        <div className="absolute inset-0 bg-[radial-gradient(45rem_30rem_at_60%_30%,rgba(124,92,255,0.22),transparent_65%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(35rem_25rem_at_30%_80%,rgba(255,77,141,0.16),transparent_60%)]" />
-        <div className="noise absolute inset-0" />
-        <div className="relative flex h-full items-center justify-center p-16">{aside}</div>
+      <div className="relative hidden flex-1 lg:flex">
+        <Perforations orientation="vertical" />
+
+        <div className="relative flex-1 overflow-hidden bg-film-900">
+          <div className="absolute inset-0 bg-[radial-gradient(40rem_28rem_at_55%_35%,rgba(237,163,44,0.18),transparent_65%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(32rem_24rem_at_25%_85%,rgba(51,184,168,0.10),transparent_60%)]" />
+          <div className="grain absolute inset-0" />
+          <div className="absolute inset-0 vignette" />
+          <div className="relative flex h-full items-center justify-center p-20">{aside}</div>
+        </div>
       </div>
     </div>
   );

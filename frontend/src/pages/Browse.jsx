@@ -104,10 +104,11 @@ export default function Browse({ publicMode = false }) {
       <header className="mb-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tightest text-white">
-              {publicMode ? 'Discover' : 'Browse'}
+            <p className="slate-label mb-3">The collection</p>
+            <h1 className="title-card text-3xl text-print-50">
+              {publicMode ? 'Discover' : 'Catalogue'}
             </h1>
-            <p className="mt-1.5 text-sm text-white/45">
+            <p className="tech mt-3 normal-case">
               {total > 0 ? `${total.toLocaleString()} films` : 'Loading catalogue…'}
             </p>
           </div>
@@ -117,7 +118,7 @@ export default function Browse({ publicMode = false }) {
               value={filters.sort_by}
               onChange={(event) => update({ sort: event.target.value })}
               aria-label="Sort by"
-              className="rounded-full border border-white/[0.09] bg-ink-900 px-4 py-2 text-sm text-white/80 focus:border-violet-600/70 focus:outline-none"
+              className="border border-print-100/15 bg-film-900 px-4 py-2.5 font-mono text-2xs uppercase tracking-wider text-print-200 focus:border-tungsten-500 focus:outline-none"
             >
               {SORTS.map(({ value, label }) => (
                 <option key={value} value={value}>
@@ -129,13 +130,13 @@ export default function Browse({ publicMode = false }) {
             <button
               type="button"
               onClick={() => setShowFilters((open) => !open)}
-              className={`btn-secondary px-4 py-2 text-sm ${showFilters ? 'border-white/25' : ''}`}
+              className={`btn-secondary px-4 py-2.5 text-2xs ${showFilters ? 'border-tungsten-500 text-tungsten-400' : ''}`}
               aria-expanded={showFilters}
             >
               <Filter className="h-4 w-4" />
               Filters
               {activeCount > 0 && (
-                <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-600 px-1 text-2xs font-bold text-white">
+                <span className="ml-1 flex h-4 min-w-4 items-center justify-center bg-tungsten-500 px-1 font-mono text-[10px] font-bold text-film-950">
                   {activeCount}
                 </span>
               )}
@@ -144,9 +145,9 @@ export default function Browse({ publicMode = false }) {
         </div>
 
         {showFilters && (
-          <div className="mt-5 space-y-5 rounded-2xl border border-white/[0.07] bg-ink-900/50 p-5">
+          <div className="panel mt-6 space-y-7 p-6">
             <div>
-              <span className="mb-2 block text-2xs font-medium text-white/60">Genre</span>
+              <span className="tech mb-3 block">Genre</span>
               <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
@@ -165,14 +166,14 @@ export default function Browse({ publicMode = false }) {
                     className={`chip ${searchParams.get('genre') === name ? 'chip-active' : ''}`}
                   >
                     {name}
-                    <span className="tabular-nums text-white/30">{movie_count}</span>
+                    <span className="tabular-nums text-print-500">{movie_count}</span>
                   </button>
                 ))}
               </div>
             </div>
 
             <div>
-              <span className="mb-2 block text-2xs font-medium text-white/60">Era</span>
+              <span className="tech mb-3 block">Era</span>
               <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
@@ -201,7 +202,7 @@ export default function Browse({ publicMode = false }) {
             </div>
 
             <div>
-              <span className="mb-2 block text-2xs font-medium text-white/60">Minimum rating</span>
+              <span className="tech mb-3 block">Minimum rating</span>
               <div className="flex flex-wrap gap-1.5">
                 {RATING_FLOORS.map(({ label, value }) => (
                   <button
@@ -220,7 +221,7 @@ export default function Browse({ publicMode = false }) {
               <button
                 type="button"
                 onClick={() => update({ genre: null, from: null, to: null, min: null })}
-                className="btn-ghost text-2xs"
+                className="btn-ghost -ml-3 text-2xs"
               >
                 <X className="h-3 w-3" />
                 Clear all filters
@@ -247,13 +248,13 @@ export default function Browse({ publicMode = false }) {
 
       {isFetchingNextPage && (
         <div className="flex justify-center py-8">
-          <Loader2 className="h-5 w-5 animate-spin text-white/35" />
+          <Loader2 className="h-5 w-5 animate-spin text-tungsten-500" />
         </div>
       )}
 
       {!hasNextPage && movies.length > 0 && (
-        <p className="py-10 text-center text-2xs text-white/25">
-          That&apos;s all {total.toLocaleString()} films.
+        <p className="tech py-14 text-center normal-case">
+          — End of reel · {total.toLocaleString()} films —
         </p>
       )}
     </div>

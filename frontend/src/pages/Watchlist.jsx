@@ -30,8 +30,9 @@ export default function Watchlist() {
   return (
     <div className="mx-auto max-w-[1500px] px-5 py-8 sm:px-6">
       <header className="mb-8">
-        <h1 className="text-3xl font-semibold tracking-tightest text-white">Watchlist</h1>
-        <p className="mt-1.5 text-sm text-white/45">
+        <p className="slate-label mb-3">Held over</p>
+        <h1 className="title-card text-3xl text-print-50">Watchlist</h1>
+        <p className="tech mt-3 normal-case">
           {total > 0 ? `${total} film${total === 1 ? '' : 's'} saved for later` : 'Films you save land here'}
         </p>
       </header>
@@ -52,7 +53,7 @@ export default function Watchlist() {
       <div ref={sentinel} className="h-4" aria-hidden="true" />
       {isFetchingNextPage && (
         <div className="flex justify-center py-8">
-          <Loader2 className="h-5 w-5 animate-spin text-white/35" />
+          <Loader2 className="h-5 w-5 animate-spin text-tungsten-500" />
         </div>
       )}
     </div>

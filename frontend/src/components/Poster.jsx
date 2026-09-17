@@ -27,7 +27,7 @@ export default function Poster({
   sizes = '(max-width: 640px) 45vw, (max-width: 1024px) 30vw, 200px',
   maxWidth = 500,
   priority = false,
-  rounded = 'rounded-xl',
+  rounded = '',
 }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -35,16 +35,16 @@ export default function Poster({
   if (!path || failed) {
     return (
       <div
-        className={`flex aspect-[2/3] w-full items-center justify-center bg-ink-800 ${rounded} ${className}`}
+        className={`flex aspect-[2/3] w-full items-center justify-center bg-film-800 ${rounded} ${className}`}
         aria-label={alt ? `${alt} (no artwork available)` : 'No artwork available'}
       >
-        <Film className="h-7 w-7 text-white/15" strokeWidth={1.5} />
+        <Film className="h-7 w-7 text-print-500/50" strokeWidth={1.5} />
       </div>
     );
   }
 
   return (
-    <div className={`relative aspect-[2/3] w-full overflow-hidden bg-ink-800 ${rounded} ${className}`}>
+    <div className={`relative aspect-[2/3] w-full overflow-hidden bg-film-800 ${rounded} ${className}`}>
       {/* Blurred low-resolution stand-in, removed once the real image paints. */}
       {!loaded && (
         <img
@@ -64,7 +64,7 @@ export default function Poster({
         decoding="async"
         onLoad={() => setLoaded(true)}
         onError={() => setFailed(true)}
-        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ease-smooth ${
+        className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ease-reel ${
           loaded ? 'opacity-100' : 'opacity-0'
         }`}
       />

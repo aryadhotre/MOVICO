@@ -17,7 +17,7 @@ export default function PublicShell() {
 
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-ink-950/75 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-print-100/[0.08] bg-film-950/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-5 py-3">
           <Link to={isAuthenticated ? '/app' : '/'} aria-label="MOVICO home">
             <Logo size={26} />
@@ -27,24 +27,24 @@ export default function PublicShell() {
             <button
               type="button"
               onClick={() => setPaletteOpen(true)}
-              className="flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.04] px-3.5 py-2 text-sm text-white/45 transition-colors hover:border-white/15 hover:text-white/75"
+              className="flex items-center gap-2 border border-print-100/12 px-3.5 py-2 font-mono text-2xs uppercase tracking-wider text-print-400 transition-colors hover:border-tungsten-500 hover:text-tungsten-400"
             >
               <Search className="h-4 w-4" strokeWidth={2} />
               <span className="hidden sm:inline">Search</span>
             </button>
 
             {isAuthenticated ? (
-              <Link to="/app" className="btn-primary px-4 py-2">
-                Open app
+              <Link to="/app" className="btn-primary px-5 py-2.5 text-2xs">
+                Enter
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             ) : (
               <>
-                <Link to="/login" className="btn-ghost hidden text-sm sm:inline-flex">
+                <Link to="/login" className="btn-ghost hidden text-2xs sm:inline-flex">
                   Sign in
                 </Link>
-                <Link to="/signup" className="btn-primary px-4 py-2">
-                  Get started
+                <Link to="/signup" className="btn-primary px-5 py-2.5 text-2xs">
+                  Begin
                 </Link>
               </>
             )}

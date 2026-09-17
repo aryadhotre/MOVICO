@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Jost:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,19 +6,7 @@
 
 @layer base {
   :root {
-    --bg: 6 6 10;
-    --surface: 14 14 23;
-    --surface-2: 25 25 38;
-    --hairline: 255 255 255 / 0.07;
-    --text: 244 244 247;
-    --text-dim: 155 155 173;
-    --brand: 124 92 255;
-    --brand-2: 255 77 141;
     color-scheme: dark;
-  }
-
-  * {
-    border-color: rgb(255 255 255 / 0.07);
   }
 
   html {
@@ -27,21 +15,39 @@
   }
 
   body {
-    @apply bg-ink-950 text-[#F4F4F7] font-sans antialiased;
-    /* Two fixed radial washes give the page depth without a background image. */
+    @apply bg-film-950 font-sans text-print-100 antialiased;
+    /* Tungsten falloff: the warm pool a projector bulb throws, brightest at the
+       top of the frame where the gate is. */
     background-image:
-      radial-gradient(70rem 40rem at 12% -8%, rgba(124, 92, 255, 0.14), transparent 60%),
-      radial-gradient(55rem 35rem at 92% 4%, rgba(255, 77, 141, 0.10), transparent 62%);
+      radial-gradient(60rem 38rem at 50% -12%, rgba(237, 163, 44, 0.10), transparent 62%),
+      radial-gradient(48rem 34rem at 88% 8%, rgba(51, 184, 168, 0.06), transparent 60%);
     background-attachment: fixed;
     text-rendering: optimizeLegibility;
   }
 
-  h1, h2, h3, h4 {
-    @apply tracking-snug font-semibold;
+  h1, h2, h3 {
+    @apply font-display;
   }
 
-  /* Respect the OS reduced-motion setting: animation here is decorative, and
-     ignoring the preference can trigger nausea for some users. */
+  ::selection {
+    background: theme('colors.tungsten.500');
+    color: theme('colors.film.950');
+  }
+
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: theme('colors.film.900'); }
+  ::-webkit-scrollbar-thumb {
+    background: theme('colors.film.700');
+    border: 3px solid theme('colors.film.900');
+    border-radius: 99px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: theme('colors.film.600'); }
+
+  :focus-visible {
+    outline: 2px solid theme('colors.tungsten.500');
+    outline-offset: 3px;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
     *, *::before, *::after {
@@ -50,128 +56,96 @@
       transition-duration: 0.01ms !important;
     }
   }
-
-  ::selection {
-    background: rgb(124 92 255 / 0.35);
-  }
-
-  /* Slim, unobtrusive scrollbars that match the surface palette. */
-  ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb {
-    background: rgb(255 255 255 / 0.10);
-    border-radius: 99px;
-    border: 2px solid transparent;
-    background-clip: content-box;
-  }
-  ::-webkit-scrollbar-thumb:hover { background: rgb(255 255 255 / 0.18); background-clip: content-box; }
-
-  :focus-visible {
-    outline: 2px solid rgb(124 92 255 / 0.9);
-    outline-offset: 2px;
-    border-radius: 6px;
-  }
 }
 
 @layer components {
-  /* ---------------------------------------------------------------- surfaces */
+  /* ---------------------------------------------------------------- typography */
 
-  .glass {
-    @apply border border-white/[0.07] bg-white/[0.035] backdrop-blur-xl;
+  /* Title-card treatment: wide-tracked uppercase Futura, as a main title would be
+     set. Tracking this open only works in caps and only at display size. */
+  .title-card {
+    @apply font-display font-medium uppercase leading-[0.92] tracking-marquee;
   }
 
-  .glass-strong {
-    @apply border border-white/10 bg-ink-850/80 backdrop-blur-2xl;
+  /* The small uppercase label above a section, set like a slate marking. */
+  .slate-label {
+    @apply font-mono text-2xs uppercase tracking-slate text-tungsten-500;
   }
 
-  .card-hairline {
-    @apply relative rounded-2xl border border-white/[0.07] bg-ink-900/60;
+  /* Technical metadata — runtimes, ratios, identifiers. */
+  .tech {
+    @apply font-mono text-2xs uppercase tracking-wider text-print-400;
   }
 
-  /* A one-pixel gradient edge, drawn with a masked pseudo-element so it works on
-     any background without a solid border. */
-  .ring-gradient {
-    position: relative;
-  }
-  .ring-gradient::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    padding: 1px;
-    background: linear-gradient(135deg, rgba(124, 92, 255, 0.55), rgba(255, 77, 141, 0.35), transparent 70%);
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    pointer-events: none;
+  .rule {
+    @apply h-px w-full bg-print-100/10;
   }
 
-  /* ----------------------------------------------------------------- typography */
-
-  .text-gradient {
-    @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(120deg, #FFFFFF 10%, #C9BDFF 45%, #FF9EC4 95%);
-  }
-
-  .eyebrow {
-    @apply text-2xs font-semibold uppercase tracking-[0.18em] text-white/45;
-  }
-
-  /* -------------------------------------------------------------------- buttons */
+  /* ------------------------------------------------------------------- buttons */
 
   .btn {
-    @apply inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-full
-           text-sm font-semibold transition-all duration-200 ease-smooth
-           disabled:pointer-events-none disabled:opacity-45;
+    @apply inline-flex select-none items-center justify-center gap-2 whitespace-nowrap
+           font-display text-sm font-medium uppercase tracking-slate
+           transition-all duration-200 ease-reel
+           disabled:pointer-events-none disabled:opacity-40;
   }
 
+  /* Square corners throughout: film frames, slates and ticket stubs are
+     rectilinear, and rounded pills are the thing that reads as generic product UI. */
   .btn-primary {
-    @apply btn bg-brand-gradient px-5 py-2.5 text-white shadow-glow
-           hover:-translate-y-0.5 hover:shadow-glow-lg active:translate-y-0;
+    @apply btn bg-tungsten-500 px-6 py-3 text-film-950
+           hover:bg-tungsten-400 hover:shadow-halate active:bg-tungsten-600;
   }
 
   .btn-secondary {
-    @apply btn border border-white/[0.09] bg-white/[0.06] px-5 py-2.5 text-white
-           hover:border-white/20 hover:bg-white/[0.11];
+    @apply btn border border-print-100/20 px-6 py-3 text-print-100
+           hover:border-tungsten-500 hover:text-tungsten-400;
   }
 
   .btn-ghost {
-    @apply btn px-3 py-2 text-white/65 hover:bg-white/[0.07] hover:text-white;
+    @apply btn px-3 py-2 text-print-300 hover:text-tungsten-400;
   }
 
   .btn-icon {
-    @apply btn h-9 w-9 rounded-full border border-white/[0.09] bg-ink-850/70 p-0
-           text-white/75 backdrop-blur hover:border-white/20 hover:text-white;
+    @apply btn h-9 w-9 border border-print-100/15 bg-film-900/80 p-0
+           text-print-200 backdrop-blur hover:border-tungsten-500 hover:text-tungsten-400;
   }
 
   /* --------------------------------------------------------------------- chips */
 
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-white/[0.09]
-           bg-white/[0.05] px-2.5 py-1 text-2xs font-medium text-white/70;
+    @apply inline-flex items-center gap-1.5 border border-print-100/15 px-2.5 py-1
+           font-mono text-2xs uppercase tracking-wider text-print-300
+           transition-colors hover:border-print-100/35 hover:text-print-100;
   }
 
   .chip-active {
-    @apply border-violet-600/60 bg-violet-600/20 text-violet-400;
+    @apply border-tungsten-500 bg-tungsten-500/15 text-tungsten-400;
   }
 
   /* --------------------------------------------------------------------- input */
 
   .input {
-    @apply w-full rounded-xl border border-white/[0.09] bg-ink-900/70 px-4 py-3 text-sm
-           text-white placeholder:text-white/35 transition-colors
-           focus:border-violet-600/70 focus:outline-none focus:ring-4 focus:ring-violet-600/15;
+    @apply w-full border border-print-100/15 bg-film-900 px-4 py-3 text-sm text-print-100
+           transition-colors placeholder:text-print-500
+           focus:border-tungsten-500 focus:outline-none;
+  }
+
+  /* -------------------------------------------------------------------- panels */
+
+  .panel {
+    @apply border border-print-100/10 bg-film-900/70;
   }
 
   /* ------------------------------------------------------------------ skeleton */
 
   .skeleton {
-    @apply relative overflow-hidden rounded-xl bg-white/[0.045];
+    @apply relative overflow-hidden bg-print-100/[0.05];
   }
   .skeleton::after {
     content: '';
     @apply absolute inset-0 -translate-x-full animate-shimmer;
-    background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.07), transparent);
+    background-image: linear-gradient(90deg, transparent, rgb(250 247 242 / 0.06), transparent);
   }
 
   /* --------------------------------------------------------------- scroll rows */
@@ -180,25 +154,38 @@
     @apply flex gap-3 overflow-x-auto pb-2;
     scrollbar-width: none;
     scroll-snap-type: x proximity;
-    /* Fade the row's edges so cut-off cards read as "more to scroll". */
-    mask-image: linear-gradient(to right, transparent, #000 2%, #000 98%, transparent);
+    mask-image: linear-gradient(to right, transparent, #000 1.5%, #000 98.5%, transparent);
   }
   .scroll-row::-webkit-scrollbar { display: none; }
   .scroll-row > * { scroll-snap-align: start; }
 }
 
 @layer utilities {
-  .noise {
-    position: relative;
-  }
-  /* Film grain: breaks up large flat gradients that otherwise show banding. */
-  .noise::after {
+  /* Film grain. Large, low-opacity noise over flat gradients, which otherwise band
+     visibly on wide dark areas. */
+  .grain::after {
     content: '';
     position: absolute;
     inset: 0;
     pointer-events: none;
-    opacity: 0.032;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.05;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Sprocket holes, as a strip down an edge. */
+  .perforated-y {
+    @apply bg-perf;
+    background-size: 100% 22px;
+  }
+  .perforated-x {
+    @apply bg-perf-x;
+    background-size: 22px 100%;
+  }
+
+  /* The vignette every anamorphic lens produces at the corners. */
+  .vignette {
+    box-shadow: inset 0 0 14rem 3rem rgb(10 9 8 / 0.9);
   }
 
   .text-balance { text-wrap: balance; }
@@ -207,16 +194,7 @@
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { scrollbar-width: none; }
 
-  .clamp-2 {
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .clamp-3 {
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
+  .clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+  .clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 }

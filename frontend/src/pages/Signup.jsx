@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertCircle, ArrowRight, Check, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
 import AuthShell from '../components/AuthShell';
 import { useAuth } from '../lib/auth';
 
 const PERKS = [
-  'Recommendations that explain themselves',
-  'Diversity and novelty you control',
-  'Every film from 1902 to this month',
+  ['I', 'Recommendations that name their sources'],
+  ['II', 'Diversity and novelty under your control'],
+  ['III', 'Every film from 1902 to this month'],
 ];
 
 export default function Signup() {
@@ -29,7 +29,7 @@ export default function Signup() {
         email: form.email.trim(),
         password: form.password,
       });
-      // Straight into onboarding: an account with no ratings has nothing to show.
+      // Straight into calibration: an account with no ratings has nothing to show.
       navigate('/onboarding', { replace: true });
     } catch (submitError) {
       setError(submitError.message);
@@ -40,39 +40,35 @@ export default function Signup() {
 
   return (
     <AuthShell
-      title="Create your account"
-      subtitle="Rate ten films and the engine will have you placed."
+      title="Create an account"
+      subtitle="Rate ten films and the model has you placed."
       footer={
         <>
-          Already have an account?{' '}
-          <Link to="/login" className="font-medium text-violet-400 hover:text-violet-300">
+          Already have one?{' '}
+          <Link to="/login" className="text-tungsten-400 underline decoration-tungsten-500/40 underline-offset-4 hover:text-tungsten-300">
             Sign in
           </Link>
         </>
       }
       aside={
         <div className="max-w-sm">
-          <p className="font-display text-3xl leading-snug text-white/85">
+          <p className="font-display text-[1.75rem] font-light leading-snug text-print-100">
             Built on 33 million real ratings.
           </p>
-          <ul className="mt-8 space-y-3">
-            {PERKS.map((perk) => (
-              <li key={perk} className="flex items-start gap-2.5 text-sm text-white/55">
-                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-violet-600/25 text-violet-300">
-                  <Check className="h-2.5 w-2.5" strokeWidth={3} />
-                </span>
-                {perk}
+          <ul className="mt-10 space-y-5">
+            {PERKS.map(([numeral, text]) => (
+              <li key={numeral} className="flex items-baseline gap-4">
+                <span className="w-6 shrink-0 font-display text-sm text-tungsten-500">{numeral}</span>
+                <span className="text-sm leading-relaxed text-print-300">{text}</span>
               </li>
             ))}
           </ul>
         </div>
       }
     >
-      <form onSubmit={submit} className="space-y-4" noValidate>
+      <form onSubmit={submit} className="space-y-5" noValidate>
         <div>
-          <label htmlFor="username" className="mb-1.5 block text-2xs font-medium text-white/60">
-            Username
-          </label>
+          <label htmlFor="username" className="tech mb-2 block">Username</label>
           <input
             id="username"
             name="username"
@@ -87,9 +83,7 @@ export default function Signup() {
         </div>
 
         <div>
-          <label htmlFor="email" className="mb-1.5 block text-2xs font-medium text-white/60">
-            Email
-          </label>
+          <label htmlFor="email" className="tech mb-2 block">Email</label>
           <input
             id="email"
             name="email"
@@ -104,9 +98,7 @@ export default function Signup() {
         </div>
 
         <div>
-          <label htmlFor="password" className="mb-1.5 block text-2xs font-medium text-white/60">
-            Password
-          </label>
+          <label htmlFor="password" className="tech mb-2 block">Password</label>
           <input
             id="password"
             name="password"
@@ -121,27 +113,20 @@ export default function Signup() {
             aria-invalid={passwordTooShort}
           />
           {passwordTooShort && (
-            <p className="mt-1.5 text-2xs text-amber-500">Use at least 6 characters.</p>
+            <p className="mt-2 font-mono text-2xs text-tungsten-500">Use at least 6 characters.</p>
           )}
         </div>
 
         {error && (
-          <p
-            role="alert"
-            className="flex items-start gap-2 rounded-xl border border-magenta-500/25 bg-magenta-500/[0.08] px-3.5 py-2.5 text-2xs leading-relaxed text-magenta-400"
-          >
+          <p role="alert" className="flex items-start gap-2 border border-reel-500/40 bg-reel-500/10 px-3.5 py-2.5 font-mono text-2xs leading-relaxed text-reel-400">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {error}
           </p>
         )}
 
-        <button
-          type="submit"
-          disabled={busy || passwordTooShort}
-          className="btn-primary w-full py-3"
-        >
+        <button type="submit" disabled={busy || passwordTooShort} className="btn-primary w-full">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-          {busy ? 'Creating account…' : 'Create account'}
+          {busy ? 'Creating…' : 'Create account'}
         </button>
       </form>
     </AuthShell>
