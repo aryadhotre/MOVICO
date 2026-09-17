@@ -44,13 +44,16 @@ logger = logging.getLogger(__name__)
 POSITIVE_THRESHOLD = 3.5
 ALPHA = 18.0
 
-# Score-blend weights. Collaborative evidence leads; the quality prior is what
-# keeps the list from drifting into well-matched but poorly-regarded films.
+# Score-blend weights, selected by the grid search in ``app.ml.train`` against the
+# held-out evaluation slice rather than picked by hand. Collaborative evidence
+# leads; the quality prior is what keeps the list from drifting into well-matched
+# but poorly-regarded films. Re-tune with:
+#     python -m app.ml.train --reuse-models
 WEIGHTS = {
-    "ials": 0.46,
-    "item_knn": 0.26,
-    "content": 0.16,
-    "quality": 0.12,
+    "ials": 0.50,
+    "item_knn": 0.28,
+    "content": 0.12,
+    "quality": 0.10,
 }
 
 # Relevance/diversity trade-off for the MMR pass. 1.0 disables diversification.

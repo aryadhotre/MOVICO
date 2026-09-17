@@ -6,7 +6,7 @@
 
 Implicit-ALS collaborative filtering + a shrunk item-item neighbourhood + weighted
 multi-channel content similarity, fused and diversity re-ranked, over 33.1M
-MovieLens ratings and an 86k-title catalogue enriched from TMDB.
+MovieLens ratings and a 95k-title catalogue enriched from TMDB.
 
 FastAPI · SQLite · NumPy/SciPy · React · Vite · Tailwind
 
@@ -33,23 +33,21 @@ MOVICO is built around those four problems.
 
 ## Results
 
-Measured under a **strong-generalisation** protocol (definition below), 4,981
-held-out users, full 43,853-item catalogue, no negative sampling:
+Measured under a **strong-generalisation** protocol (definition below), 4,981 held-out users, full 43,853-item catalogue, no negative sampling:
 
 | Model | HR@10 | HR@50 | NDCG@10 | Recall@20 | AUC | Coverage |
 |---|---|---|---|---|---|---|
 | Popularity baseline | 0.295 | 0.539 | 0.065 | 0.083 | 0.970 | 0.005 |
-| Item-item kNN | 0.394 | 0.652 | 0.098 | 0.120 | 0.990 | 0.043 |
+| Item-item kNN | 0.393 | 0.652 | 0.098 | 0.120 | 0.990 | 0.043 |
 | Implicit ALS | 0.454 | 0.768 | 0.109 | 0.160 | 0.912 | 0.074 |
-| **Hybrid (fused)** | **0.454** | 0.756 | **0.116** | **0.163** | 0.944 | 0.060 |
+| **Hybrid (fused)** | **0.454** | 0.755 | **0.116** | **0.163** | 0.950 | 0.059 |
 
-**Lift over the popularity baseline: 1.54× HR@10, 1.78× NDCG@10, 1.98× Recall@20,
-12.3× catalogue coverage.**
+**Lift over the popularity baseline: 1.54x HR@10, 1.78x NDCG@10, 1.97x Recall@20, 12.1x catalogue coverage.**
 
 ### A note on "accuracy"
 
 Ranking AUC is the number that looks best here, and it is the one worth trusting
-least. The popularity baseline scores **0.970** on it — because over an 87k-title
+least. The popularity baseline scores **0.970** on it — because over a 95k-title
 catalogue, almost every pair a model is asked to order is trivially easy. Any model
 clears 90% AUC on this task, so "94% accurate" would be true and say nothing.
 
@@ -82,7 +80,7 @@ Regenerate with `python -m app.ml.train`; the report lands in
 ## How the engine works
 
 ```
-                    ratings.csv (33.1M)          catalogue (86.7k titles, TMDB)
+                    ratings.csv (33.1M)          catalogue (96k titles, TMDB)
                            │                                │
                     ┌──────┴──────┐                         │
                     ▼             ▼                         ▼
@@ -209,7 +207,14 @@ current user's ratings, never the historical rows.
 
 **MovieLens ends in July 2023.** It has 1,962 titles for 2022 and 79 for 2024, so
 anything recent has to come from TMDB's discover feed. That's what
-`enrich discover` is for.
+`enrich discover` is for. After running it the catalogue holds 95,947 titles, 93,641 with artwork (97.6%) and 56,458 with a trailer:
+
+| Year | MovieLens only | After TMDB discover |
+|---|---|---|
+| 2023 | 556 | 3,159 |
+| 2024 | 79 | 2,983 |
+| 2025 | 119 | 2,775 |
+| 2026 | 0 | 1,168 |
 
 ---
 
@@ -238,7 +243,7 @@ Interactive docs at `/docs`.
 - **Image paths, not URLs.** The API returns the bare TMDB path; the client composes
   the width it will actually paint via `srcset`. Previously every image was
   requested at `w500`, so a 160px thumbnail pulled a 70KB poster.
-- **FTS5 instead of `LIKE '%q%'`**, which cannot use an index and full-scanned 86k
+- **FTS5 instead of `LIKE '%q%'`**, which cannot use an index and full-scanned 95k
   rows per keystroke.
 - **Cached filter counts.** `COUNT(*)` over a filtered catalogue can't use a
   covering index and was re-run on every page change.
