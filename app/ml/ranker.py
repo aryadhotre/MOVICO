@@ -487,13 +487,22 @@ class RecommendationEngine:
     ) -> list[ScoredMovie]:
         """Ranking for a user with no usable ratings yet.
 
-        Blends quality with current momentum rather than returning a raw
-        popularity list, then diversifies, so two new users do not see an
-        identical page.
+        Three terms, because any two of them fail:
+
+        * **quality** alone returns a museum of acknowledged classics;
+        * **momentum** alone returns whatever is being hyped this week, which on a
+          catalogue that ingests upcoming releases means a page of films nobody has
+          actually seen;
+        * **audience** anchors both to titles with a real viewership, which is what
+          keeps a first impression credible.
+
+        Weighted toward proven titles, then diversified so two new users do not see
+        an identical page.
         """
         score = (
-            0.6 * _standardise(self.quality, fill=0.0)
-            + 0.4 * _standardise(np.log1p(self.trending), fill=0.0)
+            0.45 * _standardise(self.quality, fill=0.0)
+            + 0.30 * _standardise(np.log1p(self.popularity), fill=0.0)
+            + 0.25 * _standardise(np.log1p(self.trending), fill=0.0)
         )
 
         mask = self.recommendable.copy()

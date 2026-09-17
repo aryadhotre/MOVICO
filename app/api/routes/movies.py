@@ -98,10 +98,13 @@ def _apply_filters(
     year_from: Optional[int] = None,
     year_to: Optional[int] = None,
     min_rating: Optional[float] = None,
+    min_votes: Optional[int] = None,
     require_poster: bool = True,
 ):
     if require_poster:
         statement = statement.where(Movie.poster_path.isnot(None))
+    if min_votes:
+        statement = statement.where(Movie.vote_count >= min_votes)
     if genre:
         statement = statement.where(Movie.genres.contains(genre))
     if genres:
@@ -169,7 +172,7 @@ def browse_movies(
     filters = dict(
         genre=genre, genres=genres, language=language, year=year,
         year_from=year_from, year_to=year_to, min_rating=min_rating,
-        require_poster=require_poster,
+        min_votes=None, require_poster=require_poster,
     )
 
     count_key = "browse:count:" + ":".join(f"{k}={v}" for k, v in sorted(filters.items()))
@@ -345,13 +348,22 @@ def get_home_feed(response: Response, db: Session = Depends(get_db)):
             key="trending",
             title="Trending this week",
             subtitle="What the world is watching right now",
-            items=fetch(order_by=Movie.trending_score.desc()),
+            # The vote floor keeps this row to titles with a real audience. Without
+            # it, upcoming releases with a few hundred votes outrank everything,
+            # and "trending" becomes indistinguishable from "not out yet".
+            items=fetch(min_votes=800, order_by=Movie.trending_score.desc()),
         ),
         MovieRow(
             key="new_releases",
-            title="Fresh arrivals",
-            subtitle=f"Released in {current_year - 1}-{current_year}",
-            items=fetch(year_from=current_year - 1, order_by=Movie.trending_score.desc()),
+            title=f"Best of {current_year - 1}-{current_year}",
+            subtitle="Recent releases that landed well",
+            # Ordered by quality rather than momentum. Ordering recent films by
+            # trending reproduces the row above exactly, since the same handful of
+            # current blockbusters top both.
+            items=fetch(
+                year_from=current_year - 1, min_rating=3.5, min_votes=400,
+                order_by=Movie.bayes_score.desc(),
+            ),
         ),
         MovieRow(
             key="acclaimed",
@@ -376,7 +388,7 @@ def get_home_feed(response: Response, db: Session = Depends(get_db)):
         ),
     ]
 
-    for genre in ("Science Fiction", "Thriller", "Animation", "Documentary"):
+    for genre in ("Sci-Fi", "Thriller", "Animation", "Documentary"):
         items = fetch(genre=genre, min_rating=3.6, order_by=Movie.popularity_score.desc())
         if len(items) >= 8:
             rows.append(

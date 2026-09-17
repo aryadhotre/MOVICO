@@ -93,6 +93,54 @@ def reconcile_schema(target: Engine | None = None) -> dict[str, list[str]]:
     return {"columns": added_columns, "indexes": added_indexes}
 
 
+def normalise_genre_vocabulary(target: Engine | None = None) -> int:
+    """Collapses TMDB genre names onto the MovieLens vocabulary in existing rows.
+
+    Titles imported before ``tmdb.normalise_genres`` existed carry TMDB's spelling,
+    which splits the catalogue across near-duplicate genres and makes a filter
+    return half its films. Idempotent: re-running changes nothing once clean.
+    """
+    from app.pipeline.tmdb import GENRE_ALIASES
+
+    target = target or engine
+    changed = 0
+
+    with target.begin() as connection:
+        for tmdb_name, canonical in GENRE_ALIASES.items():
+            rows = connection.execute(
+                text("SELECT id, genres FROM movies WHERE genres LIKE :pattern"),
+                {"pattern": f"%{tmdb_name}%"},
+            ).fetchall()
+
+            updates = []
+            for movie_id, genres in rows:
+                parts = [part.strip() for part in (genres or "").split("|") if part.strip()]
+                # Guard against substring collisions, e.g. "Science Fiction" matching
+                # a LIKE for a shorter alias.
+                if tmdb_name not in parts:
+                    continue
+                rebuilt: list[str] = []
+                for part in parts:
+                    replacement = canonical if part == tmdb_name else part
+                    if replacement and replacement not in rebuilt:
+                        rebuilt.append(replacement)
+                updates.append(
+                    {"id": movie_id, "genres": "|".join(rebuilt) or "(no genres listed)"}
+                )
+
+            if updates:
+                connection.execute(
+                    text("UPDATE movies SET genres = :genres WHERE id = :id"), updates
+                )
+                changed += len(updates)
+                logger.info(
+                    "Genres: %s -> %s on %s titles",
+                    tmdb_name, canonical or "(removed)", f"{len(updates):,}",
+                )
+
+    return changed
+
+
 def rebuild_search_index(target: Engine | None = None) -> int:
     """(Re)builds an FTS5 virtual table for title search.
 
@@ -136,4 +184,5 @@ if __name__ == "__main__":
     result = reconcile_schema()
     print("Added columns:", result["columns"] or "none")
     print("Indexes ensured:", len(result["indexes"]))
+    print("Genre rows normalised:", normalise_genre_vocabulary())
     rebuild_search_index()

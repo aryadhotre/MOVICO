@@ -301,8 +301,17 @@ def recompute_scores() -> dict[str, int]:
                 """
             )
 
-            # Shrink toward the global mean with m=46 (the 80th percentile of
-            # MovieLens rating counts) for both rating sources.
+            # Shrink toward the global mean. The two sources use different priors
+            # on purpose.
+            #
+            # On the 14,788 titles rated by both, TMDB/2 and MovieLens means agree
+            # closely (slope 1.02, r=0.85), so no rescaling is needed. What differs
+            # is how much a vote is worth: MovieLens ratings accrue over years from
+            # a broad panel, while a just-released film's TMDB votes are early and
+            # self-selecting. At m=46 a 2026 release with 1,100 fan votes keeps 96%
+            # of its own 9.1/10 average and outranks The Shawshank Redemption.
+            # A heavier prior on TMDB-only titles damps that without silencing
+            # genuinely well-received releases.
             connection.execute(
                 """
                 UPDATE movies SET bayes_score = ROUND(
@@ -310,7 +319,7 @@ def recompute_scores() -> dict[str, int]:
                         WHEN rating_count > 0 THEN
                             (rating_count * rating_mean + 46 * 3.543) / (rating_count + 46)
                         WHEN vote_count > 0 THEN
-                            (vote_count * (vote_average / 2.0) + 46 * 3.543) / (vote_count + 46)
+                            (vote_count * (vote_average / 2.0) + 300 * 3.543) / (vote_count + 300)
                         ELSE 0.0
                     END, 4)
                 """
@@ -323,13 +332,19 @@ def recompute_scores() -> dict[str, int]:
                 """
             )
 
-            # Recency multiplier: full weight inside ~18 months, tapering after.
+            # TMDB's own popularity field already reflects current attention, so the
+            # recency term only needs to break ties -- at a 2.5 numerator it gave
+            # current-year titles a 3.5x multiplier against 1.5x for five-year-olds,
+            # and unreleased films swamped every trending surface.
+            #
+            # The vote factor saturates slowly for the same reason: a film with 300
+            # votes has not yet earned the same confidence as one with thousands.
             connection.execute(
                 """
                 UPDATE movies SET trending_score = ROUND(
                     LN(1 + tmdb_popularity)
-                    * (1.0 + 2.5 / (1.0 + MAX(0, :this_year - COALESCE(release_year, 1900)) / 1.5))
-                    * (0.35 + 0.65 * MIN(1.0, vote_count / 400.0)), 4)
+                    * (1.0 + 1.0 / (1.0 + MAX(0, :this_year - COALESCE(release_year, 1900)) / 2.0))
+                    * (0.30 + 0.70 * MIN(1.0, vote_count / 1200.0)), 4)
                 """,
                 {"this_year": dt.date.today().year},
             )

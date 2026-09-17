@@ -233,6 +233,30 @@ def _pick_trailer(videos: dict | None) -> Optional[str]:
     return min(results, key=rank)["key"]
 
 
+# TMDB and MovieLens name several genres differently. Left unmapped the catalogue
+# ends up with two of each -- "Sci-Fi" holding 4,595 MovieLens titles and "Science
+# Fiction" holding 528 TMDB ones -- so a genre filter silently returns half the
+# films it should. MovieLens is the canonical vocabulary because it covers the
+# overwhelming majority of the catalogue.
+GENRE_ALIASES = {
+    "Science Fiction": "Sci-Fi",
+    "Family": "Children",
+    "Music": "Musical",
+    # Not a genre, and it has no MovieLens counterpart.
+    "TV Movie": None,
+}
+
+
+def normalise_genres(names: Iterable[str]) -> list[str]:
+    """Maps TMDB genre names onto the MovieLens vocabulary, preserving order."""
+    result: list[str] = []
+    for name in names:
+        mapped = GENRE_ALIASES.get(name, name)
+        if mapped and mapped not in result:
+            result.append(mapped)
+    return result
+
+
 def parse_movie_detail(payload: dict, max_cast: int = 12, max_keywords: int = 20) -> dict:
     """Flattens a TMDB movie payload into catalogue column values."""
     credits = payload.get("credits") or {}
@@ -266,7 +290,9 @@ def parse_movie_detail(payload: dict, max_cast: int = 12, max_keywords: int = 20
     if release_date and len(release_date) >= 4 and release_date[:4].isdigit():
         release_year = int(release_date[:4])
 
-    genres = "|".join(g["name"] for g in payload.get("genres", []) if g.get("name"))
+    genres = "|".join(
+        normalise_genres(g["name"] for g in payload.get("genres", []) if g.get("name"))
+    )
 
     return {
         "tmdb_id": str(payload["id"]),
