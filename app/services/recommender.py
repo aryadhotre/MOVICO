@@ -1,127 +1,228 @@
-import time
-import logging
+"""Recommendation orchestration.
+
+Sits between the HTTP layer and ``app.ml.ranker``: loads the user's taste profile,
+calls the engine off the event loop, hydrates movie metadata in one query, and
+caches the result keyed by the profile's actual state so a new rating invalidates
+it immediately.
+
+The engine's numeric work is synchronous numpy, which holds the GIL. Running it
+directly inside an async handler would stall every other in-flight request for the
+duration, so it is dispatched to a worker thread.
+"""
+
+from __future__ import annotations
+
 import asyncio
-from datetime import datetime
+import logging
+import time
+from datetime import datetime, timezone
+from typing import Optional, Sequence
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
-from app.database.models import RecommendationHistory, Movie
-from app.database.schemas import RecommendationResponse, MovieResponse
-from app.models.hybrid import HybridRecommender
-from app.services.cache import RedisCacheService
+
+from app.database.models import Movie, Rating, RecommendationHistory, Watchlist
+from app.database.schemas import (
+    BecauseOf,
+    Explanation,
+    MovieCard,
+    RecommendationResponse,
+    RecommendedMovie,
+    split_list,
+    split_title,
+)
+from app.ml.ranker import ScoredMovie, engine
+from app.services.cache import cache
 
 logger = logging.getLogger(__name__)
 
-class RecommenderCoordinator:
-    def __init__(self):
-        self.hybrid_model = HybridRecommender()
-        self.cache_service = RedisCacheService()
 
-    async def get_recommendations(
-        self, 
-        user_id: int, 
-        limit: int, 
-        db: Session, 
+def load_profile(db: Session, user_id: int) -> tuple[list[tuple[int, float]], list[int]]:
+    """Returns the user's (movie_id, rating) pairs and their watchlist ids."""
+    ratings = db.execute(
+        select(Rating.movie_id, Rating.rating).where(Rating.user_id == user_id)
+    ).all()
+    watchlist = db.execute(
+        select(Watchlist.movie_id).where(Watchlist.user_id == user_id)
+    ).scalars().all()
+    return [(int(mid), float(value)) for mid, value in ratings], [int(m) for m in watchlist]
+
+
+def hydrate(db: Session, movie_ids: Sequence[int]) -> dict[int, Movie]:
+    """Fetches every movie for a result page in one query, preserving nothing else."""
+    if not movie_ids:
+        return {}
+    rows = db.execute(select(Movie).where(Movie.id.in_(list(movie_ids)))).scalars().all()
+    return {row.id: row for row in rows}
+
+
+def _build_explanation(
+    scored: ScoredMovie,
+    movie: Movie,
+    titles: dict[int, str],
+    profile_genres: dict[int, set[str]],
+) -> Explanation:
+    """Turns the engine's attribution into user-facing copy.
+
+    The ``because_of`` entries come straight from the neighbourhood model's
+    contribution read-out, so the named titles are the ones that actually moved
+    this item up the ranking.
+    """
+    because = [
+        BecauseOf(movie_id=mid, title=titles.get(mid, "a film you rated"), weight=weight)
+        for mid, weight in scored.because_of
+        if mid in titles
+    ]
+
+    own_genres = set(split_list(movie.genres, "|"))
+    shared: set[str] = set()
+    for mid, _ in scored.because_of:
+        shared |= own_genres & profile_genres.get(mid, set())
+
+    if because:
+        headline = f"Because you liked {because[0].title}"
+    elif scored.components.get("content", 0) > 0.5:
+        headline = "Matches the themes you gravitate toward"
+    elif scored.components.get("quality", 0) > 0.5:
+        headline = "Highly rated by viewers with similar taste"
+    else:
+        headline = "Picked for your taste profile"
+
+    return Explanation(
+        kind="hybrid",
+        headline=headline,
+        because_of=because,
+        components=scored.components,
+        shared_genres=sorted(shared)[:4],
+    )
+
+
+class RecommenderService:
+    """Cached, thread-offloaded access to the recommendation engine."""
+
+    def warm(self) -> bool:
+        return engine.load()
+
+    async def recommend(
+        self,
+        db: Session,
+        user_id: int,
+        limit: int = 20,
+        diversity: float = 1.0,
+        novelty: float = 0.0,
+        genres: Optional[Sequence[str]] = None,
+        min_year: Optional[int] = None,
         bypass_cache: bool = False,
-        include_explanations: bool = True
+        explain: bool = True,
     ) -> RecommendationResponse:
-        """Retrieves and coordinates movie recommendation generation, caching, and audit logging."""
-        start_time = time.time()
-        
-        # Imports needed for response schemas
-        from app.database.schemas import RecommendedMovieResponse, RecommendationExplanation
-        
-        # 1. Attempt Cache Retrieval
+        started = time.perf_counter()
+
+        rated, watchlist = load_profile(db, user_id)
+        # Keying on the profile size and rating sum means any new or changed rating
+        # produces a different key, so stale recommendations cannot be served.
+        signature = f"{len(rated)}:{sum(value for _, value in rated):.1f}"
+        key = (
+            f"recs:{user_id}:{signature}:{limit}:{diversity}:{novelty}:"
+            f"{','.join(sorted(genres or []))}:{min_year}"
+        )
+
         if not bypass_cache:
-            cached_recs = self.cache_service.get_cached_recommendations(user_id)
-            if cached_recs is not None:
-                # Cache hit: slice to requested limit
-                sliced_recs = cached_recs[:limit]
-                execution_time = time.time() - start_time
-                
-                # Fetch movie details for response in a single batch query
-                target_ids = [int(item["movie_id"]) for item in sliced_recs]
-                fetched_movies = db.query(Movie).filter(Movie.id.in_(target_ids)).all() if target_ids else []
-                movie_map = {m.id: m for m in fetched_movies}
-                movie_objs = [movie_map[mid] for mid in target_ids if mid in movie_map]
-                rec_ids = [m.id for m in movie_objs]
-                
-                # Generate explanations on-the-fly for the page returned if requested
-                explanations = {}
-                if include_explanations and rec_ids:
-                    explanations = await asyncio.to_thread(self.hybrid_model._generate_explanations, user_id, rec_ids, db)
-                
-                formatted_movies = []
-                for movie in movie_objs:
-                    schema_movie = RecommendedMovieResponse.from_orm(movie)
-                    if movie.id in explanations:
-                        schema_movie.explanation = explanations[movie.id]
-                    formatted_movies.append(schema_movie)
-                
-                logger.info(f"Returning {len(formatted_movies)} cached recommendations for user {user_id}")
-                return RecommendationResponse(
-                    recommendation_type="cached_hybrid",
-                    movies=formatted_movies,
-                    generated_at=datetime.utcnow(),
-                    execution_time_seconds=execution_time
+            cached = cache.get(key)
+            if cached is not None:
+                payload = RecommendationResponse(**cached)
+                payload.cached = True
+                payload.execution_ms = round((time.perf_counter() - started) * 1000, 2)
+                return payload
+
+        scored, strategy = await asyncio.to_thread(
+            engine.recommend,
+            rated,
+            limit,
+            watchlist,
+            diversity,
+            novelty,
+            genres,
+            min_year,
+        )
+
+        movies = hydrate(db, [item.movie_id for item in scored])
+
+        titles: dict[int, str] = {}
+        profile_genres: dict[int, set[str]] = {}
+        referenced = {mid for item in scored for mid, _ in item.because_of}
+        if referenced and explain:
+            for row in hydrate(db, list(referenced)).values():
+                titles[row.id] = split_title(row.title)[0]
+                profile_genres[row.id] = set(split_list(row.genres, "|"))
+
+        results: list[RecommendedMovie] = []
+        for item in scored:
+            movie = movies.get(item.movie_id)
+            if movie is None:
+                continue
+            card = MovieCard.model_validate(movie).model_dump()
+            explanation = None
+            if explain:
+                if strategy == "cold_start":
+                    explanation = Explanation(
+                        kind="cold_start",
+                        headline="Popular right now while we learn your taste",
+                    )
+                else:
+                    explanation = _build_explanation(item, movie, titles, profile_genres)
+            results.append(
+                RecommendedMovie(
+                    **card,
+                    score=round(item.score, 4),
+                    rank=item.rank,
+                    explanation=explanation,
                 )
-
-        # 2. Cache Miss: Execute Recommendation Models
-        logger.info(f"Generating live recommendations for user {user_id}...")
-        recs = await asyncio.to_thread(
-            self.hybrid_model.recommend,
-            user_id,
-            top_n=limit * 2,
-            db=db,
-            include_explanations=include_explanations
-        ) # Fetch double size for buffer
-        
-        # Slice to requested size
-        sliced_recs = recs[:limit]
-        rec_movie_ids = [item["movie_id"] for item in sliced_recs]
-        
-        # Determine recommendation strategy used
-        rec_type = "hybrid"
-        if sliced_recs and "metadata" not in sliced_recs[0]:
-            rec_type = "popularity_cold_start"
-
-        # 3. Create Audit Trail Entry in DB
-        try:
-            history_entry = RecommendationHistory(
-                user_id=user_id,
-                recommendation_type=rec_type,
-                movie_ids=rec_movie_ids
             )
-            db.add(history_entry)
+
+        response = RecommendationResponse(
+            strategy=strategy,
+            movies=results,
+            generated_at=datetime.now(timezone.utc),
+            execution_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+
+        cache.set(key, response.model_dump(mode="json"))
+        self._log_history(db, user_id, strategy, [item.movie_id for item in scored])
+        return response
+
+    @staticmethod
+    def _log_history(db: Session, user_id: int, strategy: str, movie_ids: list[int]) -> None:
+        """Best-effort audit trail; a failure here must not fail the request."""
+        if not movie_ids:
+            return
+        try:
+            db.add(
+                RecommendationHistory(
+                    user_id=user_id,
+                    recommendation_type=strategy,
+                    movie_ids=movie_ids,
+                )
+            )
             db.commit()
-            logger.info(f"Audit log created: recommendation history saved for user {user_id}")
-        except Exception as e:
-            logger.warning(f"Failed to write recommendation audit log to database: {str(e)}")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Could not write recommendation history: %s", exc)
             db.rollback()
 
-        # 4. Format objects as RecommendedMovieResponse in a single batch query
-        target_ids = [int(item["movie_id"]) for item in sliced_recs]
-        fetched_movies = db.query(Movie).filter(Movie.id.in_(target_ids)).all() if target_ids else []
-        movie_map = {m.id: m for m in fetched_movies}
+    async def similar(self, db: Session, movie_id: int, limit: int = 12) -> list[MovieCard]:
+        key = f"similar:{movie_id}:{limit}"
+        cached = cache.get(key)
+        if cached is not None:
+            return [MovieCard(**item) for item in cached]
 
-        formatted_movies = []
-        for item in sliced_recs:
-            mid = int(item["movie_id"])
-            movie = movie_map.get(mid)
-            if movie:
-                schema_movie = RecommendedMovieResponse.from_orm(movie)
-                if "explanation" in item and item["explanation"]:
-                    schema_movie.explanation = item["explanation"]
-                formatted_movies.append(schema_movie)
+        scored = await asyncio.to_thread(engine.similar, movie_id, limit)
+        movies = hydrate(db, [item.movie_id for item in scored])
+        cards = [
+            MovieCard.model_validate(movies[item.movie_id])
+            for item in scored
+            if item.movie_id in movies
+        ]
+        cache.set(key, [card.model_dump(mode="json") for card in cards], ttl=3600)
+        return cards
 
-        # 5. Save to Cache in background
-        cache_data = [{"movie_id": item["movie_id"]} for item in recs]
-        self.cache_service.set_cached_recommendations(user_id, cache_data)
 
-        execution_time = time.time() - start_time
-        logger.info(f"Live recommendations computed for user {user_id} in {execution_time:.4f}s")
-        
-        return RecommendationResponse(
-            recommendation_type=rec_type,
-            movies=formatted_movies,
-            generated_at=datetime.utcnow(),
-            execution_time_seconds=execution_time
-        )
+recommender = RecommenderService()

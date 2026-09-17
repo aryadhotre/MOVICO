@@ -1,2 +1,1 @@
-from app.pipeline.ingest import DataPipeline
-from app.pipeline.preprocess import MoviePreprocessor
+"""Data pipelines: MovieLens ingestion, schema migration and TMDB enrichment."""

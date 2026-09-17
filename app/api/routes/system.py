@@ -1,187 +1,231 @@
-import os
+"""Health, statistics and maintenance endpoints.
+
+The pipeline triggers are guarded by ``ADMIN_TOKEN``. They rebuild the catalogue
+and retrain the models, which are expensive and destructive enough that leaving them
+open on a public deployment would be a denial-of-service button.
+"""
+
+from __future__ import annotations
+
+import asyncio
 import json
-from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-from app.database.connection import get_db
-from app.config.settings import settings
-from app.models.trainer import train_and_evaluate_models
-from app.database.models import Movie, Rating
-import redis
 import logging
+import os
+import threading
+from typing import Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
+from sqlalchemy import func, select, text
+from sqlalchemy.orm import Session
+
+from app.config.settings import settings
+from app.database.connection import get_db
+from app.database.models import Movie
+from app.database.schemas import CatalogueStats
+from app.ml.ranker import engine
+from app.services.cache import cache
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/system", tags=["System Management"])
+router = APIRouter(prefix="/system", tags=["System"])
 
-# Global variables to track background task status
-training_in_progress = False
-enrichment_in_progress = False
+_running: dict[str, bool] = {}
+_lock = threading.Lock()
 
-def run_retraining_task():
-    global training_in_progress
-    try:
-        logger.info("Background model training task started.")
-        train_and_evaluate_models()
-        logger.info("Background model training completed successfully.")
-    except Exception as e:
-        logger.error(f"Background training failed: {str(e)}")
-    finally:
-        training_in_progress = False
 
-def run_enrichment_task(limit: int = None):
-    global enrichment_in_progress
-    try:
-        logger.info("Background TMDB enrichment task started.")
-        from app.database.connection import SessionLocal
-        from app.pipeline.tmdb_enricher import enrich_movies_from_tmdb
-        db = SessionLocal()
-        try:
-            enrich_movies_from_tmdb(db, limit=limit)
-        finally:
-            db.close()
-        logger.info("Background TMDB enrichment completed successfully.")
-    except Exception as e:
-        logger.error(f"Background enrichment failed: {str(e)}")
-    finally:
-        enrichment_in_progress = False
+def require_admin(x_admin_token: Optional[str] = Header(None)) -> None:
+    """Gates destructive maintenance endpoints."""
+    expected = os.getenv("ADMIN_TOKEN") or getattr(settings, "ADMIN_TOKEN", "")
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Maintenance endpoints are disabled because ADMIN_TOKEN is not set.",
+        )
+    if x_admin_token != expected:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid admin token"
+        )
+
+
+def _claim(name: str) -> bool:
+    with _lock:
+        if _running.get(name):
+            return False
+        _running[name] = True
+        return True
+
+
+def _release(name: str) -> None:
+    with _lock:
+        _running[name] = False
+
 
 @router.get("/health")
 def health_check(db: Session = Depends(get_db)):
-    """Checks the health of the database, Redis, and ML models."""
-    health_status = {
-        "status": "healthy",
-        "database": "healthy",
-        "redis": "healthy",
-        "models_exist": True
-    }
-    
-    # 1. Test Database
+    """Liveness and readiness for the database, models and cache."""
+    report = {"status": "healthy", "database": "up", "engine": "up", "cache": "up"}
+
     try:
         db.execute(text("SELECT 1"))
-    except Exception as e:
-        logger.error(f"Healthcheck: Database is unhealthy: {str(e)}")
-        health_status["database"] = "unhealthy"
-        health_status["status"] = "degraded"
-        
-    # 2. Test Redis
-    try:
-        r = redis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=settings.REDIS_DB, socket_timeout=1)
-        r.ping()
-    except Exception as e:
-        logger.warning(f"Healthcheck: Redis is unhealthy: {str(e)}")
-        health_status["redis"] = "unhealthy"
-        # Not marking overall status as unhealthy since cache is optional but degraded
-        if health_status["status"] == "healthy":
-            health_status["status"] = "degraded"
-            
-    # 3. Test Models
-    model_path = os.path.join(settings.MODELS_DIR, "svd_model.pkl")
-    if not os.path.exists(model_path):
-        health_status["models_exist"] = False
-        health_status["status"] = "degraded"
-        
-    return health_status
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Health: database unreachable: %s", exc)
+        report["database"] = "down"
+        report["status"] = "unhealthy"
+
+    if not engine.loaded and not engine.load():
+        report["engine"] = "untrained"
+        # The catalogue still browses without models, so this is degraded not down.
+        if report["status"] == "healthy":
+            report["status"] = "degraded"
+
+    report["cache_stats"] = cache.stats()
+    return report
+
+
+@router.get("/stats", response_model=CatalogueStats)
+def catalogue_stats(db: Session = Depends(get_db)):
+    """Catalogue coverage and engine state, for the status panel."""
+    total = db.execute(select(func.count(Movie.id))).scalar_one()
+    with_posters = db.execute(
+        select(func.count(Movie.id)).where(Movie.poster_path.isnot(None))
+    ).scalar_one()
+    pending = db.execute(
+        select(func.count(Movie.id)).where(
+            Movie.enriched_at.is_(None),
+            Movie.tmdb_id.isnot(None),
+            Movie.tmdb_id.notin_(("", "nan", "None")),
+        )
+    ).scalar_one()
+    modelled = db.execute(select(func.sum(Movie.rating_count))).scalar_one() or 0
+
+    decades = db.execute(
+        select(
+            (Movie.release_year / 10 * 10).label("decade"), func.count(Movie.id)
+        )
+        .where(Movie.poster_path.isnot(None), Movie.release_year.isnot(None))
+        .group_by(text("decade"))
+        .order_by(text("decade"))
+    ).all()
+
+    return CatalogueStats(
+        total_movies=int(total),
+        with_posters=int(with_posters),
+        poster_coverage=round(with_posters / total, 4) if total else 0.0,
+        total_ratings_modelled=int(modelled),
+        catalogue_years={f"{int(decade)}s": int(count) for decade, count in decades if decade},
+        enrichment_pending=int(pending),
+        engine=engine.status(),
+    )
+
 
 @router.get("/metrics")
-def get_metrics():
-    """Retrieves the evaluation metrics from the last training run."""
-    metrics_path = os.path.join(settings.MODELS_DIR, "evaluation_metrics.json")
-    if not os.path.exists(metrics_path):
+def evaluation_metrics():
+    """The evaluation report written by the last training run."""
+    path = os.path.join(settings.MODELS_DIR, "evaluation_metrics.json")
+    if not os.path.exists(path):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Evaluation metrics not found. Models have not been trained yet."
+            detail="No evaluation report yet. Run `python -m app.ml.train`.",
         )
-        
-    with open(metrics_path, "r") as f:
-        metrics = json.load(f)
-    return metrics
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
 
-@router.get("/stats")
-def get_database_stats(db: Session = Depends(get_db)):
-    """Returns database population statistics and TMDB enrichment progress."""
-    from sqlalchemy import func as sql_func
-    
-    movie_count = db.query(sql_func.count(Movie.id)).scalar()
-    rating_count = db.query(sql_func.count(Rating.id)).scalar()
-    
-    enriched_count = db.query(sql_func.count(Movie.id)).filter(
-        Movie.poster_path.isnot(None),
-        Movie.poster_path != ""
-    ).scalar()
-    
-    unenriched_count = db.query(sql_func.count(Movie.id)).filter(
-        Movie.tmdb_id.isnot(None),
-        Movie.tmdb_id != "",
-        Movie.tmdb_id != "nan",
-        Movie.poster_path.is_(None)
-    ).scalar()
-    
-    return {
-        "total_movies": movie_count,
-        "total_ratings": rating_count,
-        "tmdb_enriched_movies": enriched_count,
-        "tmdb_pending_movies": unenriched_count,
-        "enrichment_progress_pct": round((enriched_count / movie_count) * 100, 1) if movie_count > 0 else 0
-    }
 
-@router.post("/train", status_code=status.HTTP_202_ACCEPTED)
-def trigger_retraining(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """Triggers background execution of the model training and evaluation pipeline."""
-    global training_in_progress
-    if training_in_progress:
-        return {"status": "ignored", "detail": "Retraining is already in progress"}
-        
-    training_in_progress = True
-    background_tasks.add_task(run_retraining_task)
-    return {"status": "accepted", "detail": "Retraining task queued in background"}
+@router.post("/reload-engine", status_code=status.HTTP_200_OK)
+def reload_engine(_: None = Depends(require_admin)):
+    """Re-reads model artifacts from disk without restarting the process."""
+    ok = engine.load(force=True)
+    cache.local.clear()
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=engine.load_error
+        )
+    return {"status": "reloaded", "engine": engine.status()}
+
 
 @router.post("/enrich", status_code=status.HTTP_202_ACCEPTED)
-def trigger_tmdb_enrichment(
+def trigger_enrichment(
     background_tasks: BackgroundTasks,
-    limit: int = Query(None, description="Max number of movies to enrich in this batch (None = all)")
+    limit: Optional[int] = Query(None, ge=1),
+    _: None = Depends(require_admin),
 ):
-    """Triggers background TMDB metadata enrichment for all unenriched movies.
-    
-    Requires TMDB_API_KEY to be configured in .env.
-    For large catalogs (86K+ movies), consider running in batches using the 'limit' parameter.
-    """
-    global enrichment_in_progress
-    if enrichment_in_progress:
-        return {"status": "ignored", "detail": "TMDB enrichment is already in progress"}
+    """Backfills TMDB metadata for catalogue rows that lack it."""
+    if not _claim("enrich"):
+        return {"status": "already_running"}
 
-    if not settings.TMDB_API_KEY or settings.TMDB_API_KEY == "your-tmdb-api-key-here":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="TMDB_API_KEY not configured. Add your free API key to .env file. Get one at https://www.themoviedb.org/settings/api"
-        )
-        
-    enrichment_in_progress = True
-    background_tasks.add_task(run_enrichment_task, limit)
-    return {
-        "status": "accepted", 
-        "detail": f"TMDB enrichment task queued in background" + (f" (limit: {limit} movies)" if limit else " (all unenriched movies)")
-    }
+    def task() -> None:
+        try:
+            from app.pipeline.enrich import enrich_pending, recompute_scores
+
+            asyncio.run(enrich_pending(limit=limit))
+            recompute_scores()
+            cache.local.clear()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Enrichment failed: %s", exc)
+        finally:
+            _release("enrich")
+
+    background_tasks.add_task(task)
+    return {"status": "accepted", "limit": limit}
 
 
-@router.post("/import-recent", status_code=status.HTTP_200_OK)
-def trigger_import_recent_movies(
-    pages: int = Query(5, ge=1, le=20, description="Number of TMDB discover pages to fetch (20 movies/page)"),
-    start_year: int = Query(2024, ge=2020, description="Start release year"),
-    end_year: int = Query(2025, ge=2020, description="End release year"),
-    db: Session = Depends(get_db)
+@router.post("/import-recent", status_code=status.HTTP_202_ACCEPTED)
+def trigger_import(
+    background_tasks: BackgroundTasks,
+    start_year: int = Query(2023, ge=1900),
+    end_year: Optional[int] = Query(None),
+    pages: int = Query(60, ge=1, le=500),
+    _: None = Depends(require_admin),
 ):
-    """Imports popular recent movies released between start_year and end_year directly from TMDB.
-    
-    Requires TMDB_API_KEY to be configured in .env.
-    Inserts new 2024-2025 movies into the database complete with poster URLs, cast lists, directors, and plot overviews.
-    """
-    from app.pipeline.tmdb_importer import import_recent_movies_from_tmdb
-    
-    if not settings.TMDB_API_KEY or settings.TMDB_API_KEY == "your-tmdb-api-key-here":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="TMDB_API_KEY not configured. Add your free API key to .env file. Get one at https://www.themoviedb.org/settings/api"
-        )
+    """Imports titles TMDB has that the catalogue does not."""
+    if not _claim("import"):
+        return {"status": "already_running"}
 
-    result = import_recent_movies_from_tmdb(db, max_pages=pages, start_year=start_year, end_year=end_year)
-    return result
+    def task() -> None:
+        try:
+            from app.pipeline.enrich import import_discover, recompute_scores
+
+            asyncio.run(
+                import_discover(start_year=start_year, end_year=end_year, pages=pages)
+            )
+            recompute_scores()
+            cache.local.clear()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Import failed: %s", exc)
+        finally:
+            _release("import")
+
+    background_tasks.add_task(task)
+    return {"status": "accepted", "start_year": start_year, "pages": pages}
+
+
+@router.post("/train", status_code=status.HTTP_202_ACCEPTED)
+def trigger_training(
+    background_tasks: BackgroundTasks,
+    _: None = Depends(require_admin),
+):
+    """Retrains the recommendation models and reloads them on completion."""
+    if not _claim("train"):
+        return {"status": "already_running"}
+
+    def task() -> None:
+        try:
+            from app.ml.content import build_and_save
+            from app.ml.train import train
+
+            train()
+            build_and_save()
+            engine.load(force=True)
+            cache.local.clear()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Training failed: %s", exc)
+        finally:
+            _release("train")
+
+    background_tasks.add_task(task)
+    return {"status": "accepted"}
+
+
+@router.post("/cache/clear", status_code=status.HTTP_200_OK)
+def clear_cache(_: None = Depends(require_admin)):
+    cache.local.clear()
+    return {"status": "cleared"}

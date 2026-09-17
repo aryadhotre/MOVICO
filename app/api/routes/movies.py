@@ -1,249 +1,435 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+"""Catalogue endpoints.
+
+Performance notes, since this is the hot path for every page:
+
+* **Column-selective reads.** Card grids select only the eight columns a poster
+  tile draws. Selecting whole ``Movie`` rows pulled plot summaries, cast lists and
+  tag blobs for every tile, which dominated both query time and response size.
+* **Cached counts.** ``COUNT(*)`` over a filtered catalogue cannot use a covering
+  index and was re-run on every page change. Totals are cached per filter
+  combination, which is safe because the catalogue only changes when a pipeline
+  runs.
+* **FTS5 search.** ``title LIKE '%q%'`` cannot use an index and full-scanned 86k
+  rows per keystroke. The virtual table answers prefix queries in microseconds.
+* **One request per page, not per row.** ``/home`` returns every carousel in a
+  single response.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+import time
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
-from sqlalchemy import func as sql_func, and_
-from typing import List, Optional
-from collections import Counter
+
 from app.database.connection import get_db
 from app.database.models import Movie
 from app.database.schemas import (
-    MovieResponse, PaginatedMovieResponse, GenreListResponse, GenreResponse,
-    build_pagination_meta
+    GenreCount,
+    GenreListResponse,
+    HomeFeed,
+    MovieCard,
+    MovieDetail,
+    MovieRow,
+    PaginatedMovies,
+    build_pagination_meta,
+    split_list,
+    split_title,
 )
-from app.models.content_based import ContentBasedRecommender
-from app.models.collaborative import CollaborativeRecommender
+from app.services.cache import cache
+from app.services.recommender import recommender
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/movies", tags=["Movies"])
 
-# Shared model instances for similar movie retrieval
-content_model = ContentBasedRecommender()
-collab_model = CollaborativeRecommender()
+# Exactly the columns a poster tile renders.
+CARD_COLUMNS = (
+    Movie.id, Movie.title, Movie.release_year, Movie.genres, Movie.poster_path,
+    Movie.backdrop_path, Movie.vote_average, Movie.bayes_score, Movie.runtime,
+    Movie.rating_count,
+)
 
-# In-memory genre cache (rebuilt on first request or via /genres endpoint)
-_genre_cache: Optional[GenreListResponse] = None
+SORT_COLUMNS = {
+    "popularity": Movie.popularity_score,
+    "trending": Movie.trending_score,
+    "rating": Movie.bayes_score,
+    "vote_average": Movie.vote_average,
+    "title": Movie.title,
+    "release_date": Movie.release_year,
+    "year": Movie.release_year,
+    "votes": Movie.rating_count,
+}
 
+# FTS5 treats these as operators; a user typing them means them literally.
+_FTS_SPECIALS = re.compile(r'["*():^\-]')
 
-def _build_genre_cache(db: Session) -> GenreListResponse:
-    """Scans all movies and builds a sorted genre catalog with movie counts.
-    
-    MovieLens stores genres as pipe-separated strings (e.g., "Action|Adventure|Sci-Fi").
-    This function splits them, counts occurrences, and returns a sorted list.
-    """
-    global _genre_cache
-    
-    # Fetch all genre strings in a single lightweight query
-    genre_strings = db.query(Movie.genres).all()
-    
-    genre_counter = Counter()
-    for (genres_str,) in genre_strings:
-        if genres_str and genres_str != "(no genres listed)":
-            for genre in genres_str.split("|"):
-                genre = genre.strip()
-                if genre:
-                    genre_counter[genre] += 1
-    
-    # Sort alphabetically
-    genre_list = sorted(
-        [GenreResponse(name=name, movie_count=count) for name, count in genre_counter.items()],
-        key=lambda g: g.name
-    )
-    
-    _genre_cache = GenreListResponse(
-        genres=genre_list,
-        total_genres=len(genre_list)
-    )
-    return _genre_cache
+BROWSE_CACHE_TTL = 300.0
+HOME_CACHE_TTL = 300.0
 
 
-def _apply_genre_filter(query, genre: Optional[str], genres: Optional[str]):
-    """Applies genre filtering to a SQLAlchemy query.
-    
-    Supports two filter modes:
-    - Single genre: ?genre=Action
-    - Multiple genres (comma-separated, AND logic): ?genres=Action,Sci-Fi
-      → Returns movies that contain ALL specified genres
-    """
+def row_to_card(row: Any) -> dict:
+    """Builds a card payload from a column tuple."""
+    title, year_from_title = split_title(row.title)
+    return {
+        "id": row.id,
+        "title": title,
+        "year": row.release_year or year_from_title,
+        "genres": split_list(row.genres, "|"),
+        "poster_path": row.poster_path,
+        "backdrop_path": row.backdrop_path,
+        "vote_average": row.vote_average,
+        "bayes_score": row.bayes_score,
+        "runtime": row.runtime,
+        "rating_count": row.rating_count,
+    }
+
+
+def _apply_filters(
+    statement,
+    genre: Optional[str] = None,
+    genres: Optional[str] = None,
+    language: Optional[str] = None,
+    year: Optional[int] = None,
+    year_from: Optional[int] = None,
+    year_to: Optional[int] = None,
+    min_rating: Optional[float] = None,
+    require_poster: bool = True,
+):
+    if require_poster:
+        statement = statement.where(Movie.poster_path.isnot(None))
     if genre:
-        # Single genre filter — match movies containing this genre
-        query = query.filter(Movie.genres.contains(genre))
-    
+        statement = statement.where(Movie.genres.contains(genre))
     if genres:
-        # Multi-genre filter — match movies containing ALL specified genres
-        genre_list = [g.strip() for g in genres.split(",") if g.strip()]
-        for g in genre_list:
-            query = query.filter(Movie.genres.contains(g))
-    
-    return query
+        for value in (part.strip() for part in genres.split(",") if part.strip()):
+            statement = statement.where(Movie.genres.contains(value))
+    if language:
+        statement = statement.where(Movie.original_language == language.lower())
+    if year:
+        statement = statement.where(Movie.release_year == year)
+    if year_from:
+        statement = statement.where(Movie.release_year >= year_from)
+    if year_to:
+        statement = statement.where(Movie.release_year <= year_to)
+    if min_rating:
+        statement = statement.where(Movie.bayes_score >= min_rating)
+    return statement
 
 
 @router.get("/genres", response_model=GenreListResponse)
-def get_genres(
-    db: Session = Depends(get_db)
-):
-    """Returns all available genres in the movie catalog with movie counts.
-    
-    Response is cached in memory after first call for fast subsequent retrieval.
-    Use this endpoint to populate genre filter dropdowns in the frontend.
-    """
-    global _genre_cache
-    if _genre_cache is not None:
-        return _genre_cache
-    return _build_genre_cache(db)
+def get_genres(response: Response, db: Session = Depends(get_db)):
+    """Genre catalogue with counts, restricted to displayable titles."""
+    response.headers["Cache-Control"] = "public, max-age=3600"
+
+    def build() -> dict:
+        rows = db.execute(
+            select(Movie.genres).where(Movie.poster_path.isnot(None))
+        ).scalars().all()
+        counts: dict[str, int] = {}
+        for value in rows:
+            for genre in split_list(value, "|"):
+                if genre != "(no genres listed)":
+                    counts[genre] = counts.get(genre, 0) + 1
+        ordered = sorted(counts.items(), key=lambda pair: -pair[1])
+        return GenreListResponse(
+            genres=[GenreCount(name=name, movie_count=count) for name, count in ordered],
+            total_genres=len(ordered),
+        ).model_dump()
+
+    return GenreListResponse(**cache.get_or_set("genres:v2", build, ttl=3600))
 
 
-@router.get("/trending", response_model=PaginatedMovieResponse)
-def get_trending_movies(
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    page_size: int = Query(20, ge=1, le=1000, description="Items per page"),
-    genre: Optional[str] = Query(None, description="Filter trending movies by genre"),
-    db: Session = Depends(get_db)
-):
-    """Retrieves trending movies based on time-decayed popularity where recent ratings decay less."""
-    base_query = db.query(Movie)
-    if genre:
-        base_query = base_query.filter(Movie.genres.contains(genre))
-    
-    total_items = base_query.count()
-    offset = (page - 1) * page_size
-    results = base_query.order_by(Movie.trending_score.desc()).offset(offset).limit(page_size).all()
-    
-    return PaginatedMovieResponse(
-        items=results,
-        pagination=build_pagination_meta(page, page_size, total_items)
-    )
-
-
-@router.get("/browse", response_model=PaginatedMovieResponse)
+@router.get("/browse", response_model=PaginatedMovies)
 def browse_movies(
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    page_size: int = Query(20, ge=1, le=1000, description="Items per page"),
-    sort_by: str = Query("popularity", description="Sort field"),
-    order: str = Query("desc", description="Sort order"),
-    genre: Optional[str] = Query(None, description="Filter by a single genre (e.g., 'Action')"),
-    genres: Optional[str] = Query(None, description="Filter by multiple genres, comma-separated AND logic (e.g., 'Action,Sci-Fi')"),
-    language: Optional[str] = Query(None, description="Filter by original language code (e.g., 'en', 'fr', 'ja')"),
-    year: Optional[str] = Query(None, description="Filter by release year extracted from title (e.g., '1995')"),
-    db: Session = Depends(get_db)
+    response: Response,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(24, ge=1, le=100),
+    sort_by: str = Query("popularity"),
+    order: str = Query("desc"),
+    genre: Optional[str] = Query(None),
+    genres: Optional[str] = Query(None, description="Comma-separated, AND logic"),
+    language: Optional[str] = Query(None),
+    year: Optional[int] = Query(None, ge=1874, le=2100),
+    year_from: Optional[int] = Query(None, ge=1874, le=2100),
+    year_to: Optional[int] = Query(None, ge=1874, le=2100),
+    min_rating: Optional[float] = Query(None, ge=0, le=5),
+    require_poster: bool = Query(True, description="Hide titles with no artwork"),
+    db: Session = Depends(get_db),
 ):
-    """Browse the full movie catalog with pagination, sorting, and filtering."""
-    # Map sort_by to column with safe default fallback
-    sort_column_map = {
-        "popularity": Movie.popularity_score,
-        "trending": Movie.trending_score,
-        "title": Movie.title,
-        "vote_average": Movie.vote_average,
-        "release_date": Movie.release_date,
-    }
-    sort_column = sort_column_map.get(sort_by, Movie.popularity_score)
-    
-    if str(order).lower() == "asc":
-        sort_column = sort_column.asc()
-    else:
-        sort_column = sort_column.desc()
-    
-    # Build filtered query
-    base_query = db.query(Movie)
-    base_query = _apply_genre_filter(base_query, genre, genres)
-    
-    if language:
-        base_query = base_query.filter(Movie.original_language == language.lower())
-    
-    if year:
-        # Filter by year in the title string (e.g., "(1995)")
-        base_query = base_query.filter(Movie.title.like(f"%({year})%"))
-    
-    # Get total count after filters
-    total_items = base_query.count()
-    
-    # Calculate offset
-    offset = (page - 1) * page_size
-    
-    # Fetch paginated results
-    movies = base_query.order_by(sort_column).offset(offset).limit(page_size).all()
-    
-    return PaginatedMovieResponse(
-        items=movies,
-        pagination=build_pagination_meta(page, page_size, total_items)
+    """Paginated catalogue browse with filtering and sorting."""
+    response.headers["Cache-Control"] = "public, max-age=120"
+
+    column = SORT_COLUMNS.get(sort_by, Movie.popularity_score)
+    direction = column.asc() if str(order).lower() == "asc" else column.desc()
+
+    filters = dict(
+        genre=genre, genres=genres, language=language, year=year,
+        year_from=year_from, year_to=year_to, min_rating=min_rating,
+        require_poster=require_poster,
+    )
+
+    count_key = "browse:count:" + ":".join(f"{k}={v}" for k, v in sorted(filters.items()))
+    total = cache.get(count_key)
+    if total is None:
+        total = db.execute(
+            _apply_filters(select(func.count(Movie.id)), **filters)
+        ).scalar_one()
+        cache.set(count_key, total, ttl=BROWSE_CACHE_TTL)
+
+    statement = _apply_filters(select(*CARD_COLUMNS), **filters)
+    # A stable tiebreaker keeps pagination from repeating or skipping rows when
+    # many titles share a sort value.
+    rows = db.execute(
+        statement.order_by(direction, Movie.id.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+
+    return PaginatedMovies(
+        items=[MovieCard(**row_to_card(row)) for row in rows],
+        pagination=build_pagination_meta(page, page_size, int(total)),
     )
 
 
-@router.get("/search", response_model=PaginatedMovieResponse)
+@router.get("/trending", response_model=PaginatedMovies)
+def get_trending(
+    response: Response,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(24, ge=1, le=100),
+    genre: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Titles with the strongest current momentum."""
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return browse_movies(
+        response=response, page=page, page_size=page_size, sort_by="trending",
+        order="desc", genre=genre, genres=None, language=None, year=None,
+        year_from=None, year_to=None, min_rating=None, require_poster=True, db=db,
+    )
+
+
+@router.get("/search", response_model=PaginatedMovies)
 def search_movies(
-    q: str = Query(..., min_length=1, description="Search query string"),
-    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
-    page_size: int = Query(20, ge=1, le=1000, description="Items per page"),
-    genre: Optional[str] = Query(None, description="Filter results by a single genre"),
-    genres: Optional[str] = Query(None, description="Filter results by multiple genres, comma-separated AND logic"),
-    db: Session = Depends(get_db)
+    response: Response,
+    q: str = Query(..., min_length=1, max_length=120),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(24, ge=1, le=100),
+    genre: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
 ):
-    """Searches movies by title (case-insensitive) with optional genre filtering and pagination.
-    
-    Examples:
-    - Search for "Star": `?q=Star`
-    - Search for "Star" in Sci-Fi genre: `?q=Star&genre=Sci-Fi`
-    - Search with multi-genre: `?q=Star&genres=Action,Sci-Fi`
+    """Full-text title/cast/director search via FTS5, ranked by relevance.
+
+    Falls back to a LIKE scan if the FTS table has not been built, so search keeps
+    working on a database that has not run the migration yet.
     """
-    # Build base query
-    base_query = db.query(Movie).filter(Movie.title.ilike(f"%{q}%"))
-    
-    # Apply genre filter
-    base_query = _apply_genre_filter(base_query, genre, genres)
-    
-    # Get total count for this search
-    total_items = base_query.count()
-    
-    # Calculate offset
+    response.headers["Cache-Control"] = "public, max-age=60"
+
+    cleaned = _FTS_SPECIALS.sub(" ", q).strip()
+    if not cleaned:
+        return PaginatedMovies(items=[], pagination=build_pagination_meta(page, page_size, 0))
+
+    # Prefix-match the final token so results appear while the user is still typing.
+    # The asterisk must sit outside the quotes -- inside, FTS5 reads it as a literal
+    # character and "incep*" matches nothing.
+    tokens = [token for token in cleaned.split() if token]
+    expression = " ".join([f'"{token}"' for token in tokens[:-1]] + [f'"{tokens[-1]}"*'])
+
     offset = (page - 1) * page_size
-    
-    # Fetch paginated results, ordered by popularity
-    results = base_query.order_by(Movie.popularity_score.desc()).offset(offset).limit(page_size).all()
-    
-    return PaginatedMovieResponse(
-        items=results,
-        pagination=build_pagination_meta(page, page_size, total_items)
+    try:
+        matches = db.execute(
+            text(
+                """
+                SELECT f.movie_id
+                FROM movies_fts f
+                JOIN movies m ON m.id = f.movie_id
+                WHERE movies_fts MATCH :expression
+                  AND m.poster_path IS NOT NULL
+                ORDER BY bm25(movies_fts, 10.0, 2.0, 1.0), m.popularity_score DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {"expression": expression, "limit": page_size + 1, "offset": offset},
+        ).scalars().all()
+    except Exception as exc:  # noqa: BLE001 - FTS table absent or malformed query
+        logger.warning("FTS search unavailable (%s); falling back to LIKE", exc)
+        statement = (
+            select(*CARD_COLUMNS)
+            .where(Movie.title.ilike(f"%{cleaned}%"), Movie.poster_path.isnot(None))
+            .order_by(Movie.popularity_score.desc())
+            .offset(offset)
+            .limit(page_size)
+        )
+        rows = db.execute(statement).all()
+        return PaginatedMovies(
+            items=[MovieCard(**row_to_card(row)) for row in rows],
+            pagination=build_pagination_meta(page, page_size, offset + len(rows)),
+        )
+
+    has_more = len(matches) > page_size
+    matches = matches[:page_size]
+    if not matches:
+        return PaginatedMovies(items=[], pagination=build_pagination_meta(page, page_size, offset))
+
+    if genre:
+        rows = db.execute(
+            select(*CARD_COLUMNS).where(
+                Movie.id.in_(matches), Movie.genres.contains(genre)
+            )
+        ).all()
+    else:
+        rows = db.execute(select(*CARD_COLUMNS).where(Movie.id.in_(matches))).all()
+
+    # Preserve BM25 ordering, which the IN query does not guarantee.
+    by_id = {row.id: row for row in rows}
+    ordered = [by_id[mid] for mid in matches if mid in by_id]
+
+    # Exact total would need a full FTS scan; the page-ahead probe is enough to
+    # drive "next page" without paying for it.
+    total = offset + len(ordered) + (1 if has_more else 0)
+    return PaginatedMovies(
+        items=[MovieCard(**row_to_card(row)) for row in ordered],
+        pagination=build_pagination_meta(page, page_size, total),
     )
 
 
-@router.get("/{movie_id}", response_model=MovieResponse)
-def get_movie(movie_id: int, db: Session = Depends(get_db)):
-    """Retrieves a single movie by its ID with full metadata."""
-    movie = db.query(Movie).filter(Movie.id == movie_id).first()
-    if not movie:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Movie not found"
-        )
-    return movie
+@router.get("/home", response_model=HomeFeed)
+def get_home_feed(response: Response, db: Session = Depends(get_db)):
+    """Every home-page carousel in one response.
 
-@router.get("/{movie_id}/similar", response_model=List[dict])
-def get_similar_movies(
+    Identical for all visitors, so it is cached process-wide and served with a
+    public cache header. Personalised rows come from ``/api/recommendations``.
+    """
+    response.headers["Cache-Control"] = "public, max-age=300"
+    started = time.perf_counter()
+
+    cached = cache.get("home:v2")
+    if cached is not None:
+        feed = HomeFeed(**cached)
+        feed.execution_ms = round((time.perf_counter() - started) * 1000, 2)
+        return feed
+
+    current_year = datetime.now(timezone.utc).year
+
+    def fetch(limit: int = 20, **filters) -> list[MovieCard]:
+        order = filters.pop("order_by", Movie.popularity_score.desc())
+        statement = _apply_filters(select(*CARD_COLUMNS), **filters)
+        rows = db.execute(statement.order_by(order).limit(limit)).all()
+        return [MovieCard(**row_to_card(row)) for row in rows]
+
+    hero = db.execute(
+        select(*CARD_COLUMNS)
+        .where(
+            Movie.backdrop_path.isnot(None),
+            Movie.poster_path.isnot(None),
+            Movie.bayes_score >= 3.4,
+            Movie.release_year >= current_year - 2,
+        )
+        .order_by(Movie.trending_score.desc())
+        .limit(6)
+    ).all()
+
+    rows: list[MovieRow] = [
+        MovieRow(
+            key="trending",
+            title="Trending this week",
+            subtitle="What the world is watching right now",
+            items=fetch(order_by=Movie.trending_score.desc()),
+        ),
+        MovieRow(
+            key="new_releases",
+            title="Fresh arrivals",
+            subtitle=f"Released in {current_year - 1}-{current_year}",
+            items=fetch(year_from=current_year - 1, order_by=Movie.trending_score.desc()),
+        ),
+        MovieRow(
+            key="acclaimed",
+            title="Critically acclaimed",
+            subtitle="The highest-rated films in the catalogue",
+            items=fetch(min_rating=4.0, order_by=Movie.popularity_score.desc()),
+        ),
+        MovieRow(
+            key="modern_classics",
+            title="Modern classics",
+            subtitle="The best of the last decade",
+            items=fetch(
+                year_from=current_year - 11, year_to=current_year - 1, min_rating=3.9,
+                order_by=Movie.popularity_score.desc(),
+            ),
+        ),
+        MovieRow(
+            key="hidden_gems",
+            title="Hidden gems",
+            subtitle="Superb films that slipped past the crowds",
+            items=_hidden_gems(db),
+        ),
+    ]
+
+    for genre in ("Science Fiction", "Thriller", "Animation", "Documentary"):
+        items = fetch(genre=genre, min_rating=3.6, order_by=Movie.popularity_score.desc())
+        if len(items) >= 8:
+            rows.append(
+                MovieRow(key=f"genre_{genre.lower().replace(' ', '_')}",
+                         title=f"Essential {genre}", items=items)
+            )
+
+    feed = HomeFeed(
+        hero=[MovieCard(**row_to_card(row)) for row in hero],
+        rows=[row for row in rows if row.items],
+        generated_at=datetime.now(timezone.utc),
+        execution_ms=round((time.perf_counter() - started) * 1000, 2),
+    )
+    cache.set("home:v2", feed.model_dump(mode="json"), ttl=HOME_CACHE_TTL)
+    return feed
+
+
+def _hidden_gems(db: Session, limit: int = 20) -> list[MovieCard]:
+    """Well-loved titles with modest audiences.
+
+    The band on ``rating_count`` is what makes this a discovery row rather than a
+    second popularity list: high enough that the score is trustworthy, low enough
+    that most people have not seen it.
+    """
+    rows = db.execute(
+        select(*CARD_COLUMNS)
+        .where(
+            Movie.poster_path.isnot(None),
+            Movie.bayes_score >= 3.85,
+            Movie.rating_count.between(300, 6000),
+        )
+        .order_by(Movie.bayes_score.desc())
+        .limit(limit)
+    ).all()
+    return [MovieCard(**row_to_card(row)) for row in rows]
+
+
+@router.get("/{movie_id}", response_model=MovieDetail)
+def get_movie(movie_id: int, response: Response, db: Session = Depends(get_db)):
+    """Full record for one title."""
+    movie = db.get(Movie, movie_id)
+    if movie is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found")
+    response.headers["Cache-Control"] = "public, max-age=600"
+    return MovieDetail.model_validate(movie)
+
+
+@router.get("/{movie_id}/similar", response_model=list[MovieCard])
+async def get_similar_movies(
     movie_id: int,
-    method: str = Query("content", regex="^(content|collaborative)$", description="Similarity computation method"),
-    limit: int = Query(10, ge=1, le=50),
-    db: Session = Depends(get_db)
+    response: Response,
+    limit: int = Query(12, ge=1, le=40),
+    db: Session = Depends(get_db),
 ):
-    """Returns top N similar movies using either content-based (8-channel TF-IDF) or collaborative (SVD latent) similarities."""
-    # Verify movie exists
-    movie = db.query(Movie).filter(Movie.id == movie_id).first()
-    if not movie:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Movie not found"
-        )
-        
+    """Similar titles, blending collaborative neighbourhood and content signal."""
+    if db.get(Movie, movie_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found")
+    response.headers["Cache-Control"] = "public, max-age=600"
     try:
-        if method == "content":
-            recs = content_model.recommend_similar_movies(movie_id, top_n=limit, db=db)
-        else: # collaborative
-            recs = collab_model.recommend_similar_movies(movie_id, top_n=limit, db=db)
-            
-        return recs
-    except FileNotFoundError as e:
+        return await recommender.similar(db, movie_id, limit)
+    except RuntimeError as exc:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Recommender model not initialized/trained. Details: {str(e)}"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error retrieving similar movies: {str(e)}"
-        )
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc

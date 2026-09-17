@@ -1,2 +1,1 @@
-from app.services.cache import RedisCacheService
-from app.services.recommender import RecommenderCoordinator
+"""Application services: caching and recommendation orchestration."""

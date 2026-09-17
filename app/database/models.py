@@ -23,7 +23,7 @@ class Movie(Base):
     title = Column(String(255), index=True, nullable=False)
     genres = Column(String(255), nullable=False)
     imdb_id = Column(String(20), nullable=True)
-    tmdb_id = Column(String(20), nullable=True)
+    tmdb_id = Column(String(20), nullable=True, index=True)
     popularity_score = Column(Float, default=0.0, index=True)
     trending_score = Column(Float, default=0.0, index=True)
 
@@ -39,6 +39,21 @@ class Movie(Base):
     original_language = Column(String(10), nullable=True, index=True)
     tagline = Column(String(500), nullable=True)
     user_tags = Column(Text, nullable=True)  # Aggregated user-generated tags from MovieLens
+
+    # MovieLens rating aggregates. Individual rating rows stay out of the
+    # database (33M of them); only these per-title summaries are stored.
+    rating_count = Column(Integer, default=0, index=True)
+    rating_mean = Column(Float, default=0.0)
+    # Shrunk mean (IMDb weighted-rating form) -- the default catalogue ranking.
+    bayes_score = Column(Float, default=0.0, index=True)
+
+    # Additional TMDB fields used for ranking, filtering and the detail page.
+    vote_count = Column(Integer, default=0)
+    tmdb_popularity = Column(Float, default=0.0, index=True)
+    release_year = Column(Integer, nullable=True, index=True)
+    trailer_key = Column(String(32), nullable=True)  # YouTube key from TMDB /videos
+    keywords = Column(Text, nullable=True)  # Comma-separated TMDB keywords
+    enriched_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

@@ -12,14 +12,25 @@ from app.database.models import User
 # OAuth2 scheme definition
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
+def _encode_password(password: str) -> bytes:
+    """Encodes a password for bcrypt, which rejects inputs over 72 bytes.
+
+    bcrypt only ever consumed the first 72 bytes; recent releases raise instead of
+    silently truncating, which would turn a long passphrase into a 500.
+    """
+    return password.encode("utf-8")[:72]
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifies that a plain text password matches a bcrypt hashed password."""
-    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    try:
+        return bcrypt.checkpw(_encode_password(plain_password), hashed_password.encode("utf-8"))
+    except ValueError:
+        # Malformed hash in the database; treat as a failed login rather than a crash.
+        return False
 
 def get_password_hash(password: str) -> str:
     """Generates a bcrypt hash from a plain text password."""
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+    return bcrypt.hashpw(_encode_password(password), bcrypt.gensalt()).decode("utf-8")
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """Generates a signed JWT access token containing arbitrary payload data."""

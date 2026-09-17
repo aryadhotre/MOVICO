@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     PORT: int = Field(default=8000)
     SECRET_KEY: str = Field(default="replace-this-with-a-very-secure-random-key")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1440)
+    # Required header value for the destructive maintenance endpoints. Empty
+    # disables them entirely, which is the safe default for a public deployment.
+    ADMIN_TOKEN: str = Field(default="")
     
     # Database Configurations (PostgreSQL or SQLite fallback)
     USE_SQLITE: bool = Field(default=True)
@@ -20,11 +23,17 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = Field(default=5432)
     POSTGRES_DB: str = Field(default="movico_db")
     
-    # Redis Configurations
+    # Redis is an optional shared cache tier. The in-process TTL cache is the
+    # default so a single-instance deployment needs no external service.
+    REDIS_ENABLED: bool = Field(default=False)
     REDIS_HOST: str = Field(default="localhost")
     REDIS_PORT: int = Field(default=6379)
     REDIS_DB: int = Field(default=0)
-    CACHE_EXPIRE_SECONDS: int = Field(default=3600)
+    CACHE_EXPIRE_SECONDS: int = Field(default=600)
+
+    # Comma-separated browser origins allowed to call the API. Localhost dev ports
+    # are always permitted; this is for the deployed frontend.
+    CORS_ORIGINS: str = Field(default="")
     
     # TMDB API Configuration
     TMDB_API_KEY: str = Field(default="your-tmdb-api-key-here")
@@ -49,6 +58,22 @@ class Settings(BaseSettings):
     TRAINING_SAMPLE_SIZE: int = Field(default=0)
     SVD_EPOCHS: int = Field(default=20)
     SVD_FACTORS: int = Field(default=100)
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Explicit allowed origins, including the local dev server."""
+        defaults = [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:4173",
+            "http://localhost:3000",
+        ]
+        configured = [
+            origin.strip().rstrip("/")
+            for origin in self.CORS_ORIGINS.split(",")
+            if origin.strip()
+        ]
+        return list(dict.fromkeys(defaults + configured))
 
     @property
     def database_url(self) -> str:

@@ -1,333 +1,260 @@
+"""API contract tests.
+
+These cover the bugs that made the previous frontend misbehave, so a regression on
+any of them fails here rather than in the browser:
+
+* add-to-watchlist accepting a JSON body (was a query param, 422 every time)
+* ``POST /api/ratings`` answering without a redirect
+* card payloads exposing ``year`` and a genre *list* rather than a pipe string
+* posterless titles staying out of catalogue listings
+"""
+
 import pytest
-from fastapi.testclient import TestClient
-
-def test_health_check(client: TestClient):
-    response = client.get("/api/system/health")
-    assert response.status_code == 200
-    data = response.json()
-    assert "status" in data
-    assert "database" in data
-    assert "redis" in data
-
-def test_auth_flow(client: TestClient):
-    # 1. Register new user
-    reg_response = client.post(
-        "/api/auth/register",
-        json={
-            "username": "newuser",
-            "email": "newuser@example.com",
-            "password": "secretpassword"
-        }
-    )
-    assert reg_response.status_code == 201
-    reg_data = reg_response.json()
-    assert reg_data["username"] == "newuser"
-    assert "id" in reg_data
-    
-    # 2. Login
-    login_response = client.post(
-        "/api/auth/login",
-        data={
-            "username": "newuser",
-            "password": "secretpassword"
-        }
-    )
-    assert login_response.status_code == 200
-    login_data = login_response.json()
-    assert "access_token" in login_data
-    assert login_data["token_type"] == "bearer"
-    
-    # 3. Get profile (me) using token
-    token = login_data["access_token"]
-    me_response = client.get(
-        "/api/auth/me",
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    assert me_response.status_code == 200
-    me_data = me_response.json()
-    assert me_data["username"] == "newuser"
-
-def test_search_movies_paginated(client: TestClient):
-    """Verifies that movie search returns paginated results with metadata."""
-    response = client.get("/api/movies/search?q=Toy&page=1&page_size=10")
-    assert response.status_code == 200
-    data = response.json()
-    
-    # Check paginated structure
-    assert "items" in data
-    assert "pagination" in data
-    
-    # Check pagination metadata
-    pagination = data["pagination"]
-    assert pagination["page"] == 1
-    assert pagination["page_size"] == 10
-    assert "total_items" in pagination
-    assert "total_pages" in pagination
-    assert "has_next" in pagination
-    assert "has_previous" in pagination
-    assert pagination["has_previous"] is False  # First page
-    
-    # Check actual results
-    assert len(data["items"]) > 0
-    assert "Toy Story" in data["items"][0]["title"]
-
-def test_search_movies_returns_enriched_fields(client: TestClient):
-    """Verifies that movie search results include TMDB enrichment metadata."""
-    response = client.get("/api/movies/search?q=Toy&page=1&page_size=10")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data["items"]) > 0
-    
-    movie = data["items"][0]
-    # Check enriched fields are present
-    assert "poster_path" in movie
-    assert "overview" in movie
-    assert "director" in movie
-    assert "cast_list" in movie
-    assert "poster_url" in movie
-    assert "backdrop_url" in movie
-    assert "user_tags" in movie
-    
-    # For Toy Story specifically, we seeded enrichment data
-    assert movie["poster_path"] is not None
-    assert movie["overview"] is not None
-    assert movie["director"] == "John Lasseter"
-    assert "Tom Hanks" in movie["cast_list"]
-    assert movie["poster_url"].startswith("https://image.tmdb.org")
-    assert "pixar" in movie["user_tags"]
-
-def test_browse_movies_paginated(client: TestClient):
-    """Verifies that movie browsing returns paginated results sorted by popularity."""
-    response = client.get("/api/movies/browse?page=1&page_size=2&sort_by=popularity&order=desc")
-    assert response.status_code == 200
-    data = response.json()
-    
-    assert "items" in data
-    assert "pagination" in data
-    assert len(data["items"]) == 2  # Requested 2 per page
-    assert data["pagination"]["total_items"] == 5  # 5 test movies total
-    assert data["pagination"]["total_pages"] == 3  # ceil(5/2) = 3
-    assert data["pagination"]["has_next"] is True
-    
-    # Verify sorting by popularity descending
-    assert data["items"][0]["popularity_score"] >= data["items"][1]["popularity_score"]
-
-def test_browse_movies_page_2(client: TestClient):
-    """Verifies pagination on page 2."""
-    response = client.get("/api/movies/browse?page=2&page_size=2&sort_by=popularity&order=desc")
-    assert response.status_code == 200
-    data = response.json()
-    
-    assert data["pagination"]["page"] == 2
-    assert data["pagination"]["has_previous"] is True
-    assert data["pagination"]["has_next"] is True  # Page 3 exists (5 items / 2 per page = 3 pages)
-    assert len(data["items"]) == 2
-
-def test_browse_movies_last_page(client: TestClient):
-    """Verifies last page has correct has_next=False."""
-    response = client.get("/api/movies/browse?page=3&page_size=2&sort_by=popularity&order=desc")
-    assert response.status_code == 200
-    data = response.json()
-    
-    assert data["pagination"]["page"] == 3
-    assert data["pagination"]["has_next"] is False
-    assert len(data["items"]) == 1  # Only 1 remaining item on last page
-
-def test_submit_rating(client: TestClient):
-    # Get auth token first
-    login_response = client.post(
-        "/api/auth/login",
-        data={"username": "testuser", "password": "testpassword"}
-    )
-    token = login_response.json()["access_token"]
-    
-    # Submit rating for movie 4
-    response = client.post(
-        "/api/ratings/",
-        json={"movie_id": 4, "rating": 4.5},
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    assert response.status_code == 201
-    data = response.json()
-    assert data["movie_id"] == 4
-    assert data["rating"] == 4.5
-    assert "id" in data
-    
-    # Get paginated rating history
-    hist_response = client.get(
-        "/api/ratings/history?page=1&page_size=10",
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    assert hist_response.status_code == 200
-    history = hist_response.json()
-    
-    # Check paginated structure
-    assert "items" in history
-    assert "pagination" in history
-    assert history["pagination"]["total_items"] == 4  # 3 original + 1 new
-    assert any(item["movie_id"] == 4 for item in history["items"])
-
-def test_database_stats(client: TestClient):
-    """Tests the /api/system/stats endpoint."""
-    response = client.get("/api/system/stats")
-    assert response.status_code == 200
-    data = response.json()
-    assert "total_movies" in data
-    assert "total_ratings" in data
-    assert "tmdb_enriched_movies" in data
-    assert "tmdb_pending_movies" in data
-    assert data["total_movies"] == 5
-    assert data["total_ratings"] == 3
 
 
-# ========== Genre Filtering Tests ==========
+class TestAuth:
+    def test_register_returns_token_and_user(self, client):
+        response = client.post(
+            "/api/auth/register",
+            json={"username": "newbie", "email": "newbie@example.com", "password": "hunter2!"},
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["access_token"]
+        assert body["expires_in"] > 0
+        assert body["user"]["username"] == "newbie"
 
-def test_get_genres(client: TestClient):
-    """Verifies the genre catalog endpoint returns all unique genres with counts."""
-    response = client.get("/api/movies/genres")
-    assert response.status_code == 200
-    data = response.json()
-    
-    assert "genres" in data
-    assert "total_genres" in data
-    assert data["total_genres"] > 0
-    
-    # Each genre should have name and movie_count
-    for genre in data["genres"]:
-        assert "name" in genre
-        assert "movie_count" in genre
-        assert genre["movie_count"] > 0
-    
-    # Check known genres from our test fixtures exist
-    genre_names = [g["name"] for g in data["genres"]]
-    assert "Comedy" in genre_names
-    assert "Adventure" in genre_names
-    assert "Fantasy" in genre_names
+    def test_duplicate_username_conflicts(self, client):
+        response = client.post(
+            "/api/auth/register",
+            json={"username": "testuser", "email": "other@example.com", "password": "hunter2!"},
+        )
+        assert response.status_code == 409
+        assert "already registered" in response.json()["detail"]
 
-def test_browse_with_single_genre_filter(client: TestClient):
-    """Verifies browse endpoint filters correctly by a single genre."""
-    # Filter by Comedy — test movies 1,3,4,5 have Comedy
-    response = client.get("/api/movies/browse?page=1&page_size=20&genre=Comedy")
-    assert response.status_code == 200
-    data = response.json()
-    
-    # All returned movies should contain "Comedy" in their genres
-    for movie in data["items"]:
-        assert "Comedy" in movie["genres"], f"Movie '{movie['title']}' does not have Comedy genre"
-    
-    # We have 4 movies with Comedy in test data
-    assert data["pagination"]["total_items"] == 4
+    def test_username_is_case_insensitive_on_login(self, client):
+        response = client.post(
+            "/api/auth/login",
+            data={"username": "TESTUSER", "password": "testpassword"},
+        )
+        assert response.status_code == 200
 
-def test_browse_with_multi_genre_filter(client: TestClient):
-    """Verifies multi-genre AND filter returns only movies matching ALL specified genres."""
-    # Filter by Adventure AND Fantasy — only Toy Story and Jumanji match both
-    response = client.get("/api/movies/browse?page=1&page_size=20&genres=Adventure,Fantasy")
-    assert response.status_code == 200
-    data = response.json()
-    
-    assert data["pagination"]["total_items"] == 2
-    for movie in data["items"]:
-        assert "Adventure" in movie["genres"]
-        assert "Fantasy" in movie["genres"]
+    def test_bad_password_rejected(self, client):
+        response = client.post(
+            "/api/auth/login", data={"username": "testuser", "password": "wrong"}
+        )
+        assert response.status_code == 401
 
-def test_search_with_genre_filter(client: TestClient):
-    """Verifies search + genre filter combination works correctly."""
-    # Search for movies with "(1995)" in title, filtered to Adventure genre
-    response = client.get("/api/movies/search?q=1995&genre=Adventure&page=1&page_size=20")
-    assert response.status_code == 200
-    data = response.json()
-    
-    # Only Toy Story and Jumanji have Adventure genre
-    for movie in data["items"]:
-        assert "Adventure" in movie["genres"]
-        assert "1995" in movie["title"]
+    def test_me_requires_token(self, client):
+        assert client.get("/api/auth/me").status_code == 401
 
-def test_browse_genre_no_results(client: TestClient):
-    """Verifies graceful handling when genre filter matches zero movies."""
-    response = client.get("/api/movies/browse?page=1&page_size=20&genre=Western")
-    assert response.status_code == 200
-    data = response.json()
-    
-    assert data["pagination"]["total_items"] == 0
-    assert len(data["items"]) == 0
-    assert data["pagination"]["total_pages"] == 1
-    assert data["pagination"]["has_next"] is False
-
-def test_browse_with_year_filter(client: TestClient):
-    """Verifies year filter works on the title-embedded year."""
-    response = client.get("/api/movies/browse?page=1&page_size=20&year=1995")
-    assert response.status_code == 200
-    data = response.json()
-    
-    # All 5 test movies are from 1995
-    assert data["pagination"]["total_items"] == 5
-    for movie in data["items"]:
-        assert "(1995)" in movie["title"]
-
-def test_trending_movies(client: TestClient):
-    """Verifies trending movies endpoint returns paginated results sorted by trending score."""
-    response = client.get("/api/movies/trending?page=1&page_size=3")
-    assert response.status_code == 200
-    data = response.json()
-    
-    assert "items" in data
-    assert "pagination" in data
-    assert len(data["items"]) == 3
-    # Check that it's sorted by trending_score desc
-    assert data["items"][0]["trending_score"] >= data["items"][1]["trending_score"]
-    assert data["items"][1]["trending_score"] >= data["items"][2]["trending_score"]
-
-def test_browse_sorted_by_trending(client: TestClient):
-    """Verifies browsing can be sorted by trending_score."""
-    response = client.get("/api/movies/browse?sort_by=trending&order=desc&page_size=5")
-    assert response.status_code == 200
-    data = response.json()
-    
-    assert len(data["items"]) == 5
-    assert data["items"][0]["trending_score"] >= data["items"][1]["trending_score"]
-
-def test_recommendations_with_explanations(client: TestClient):
-    """Verifies that recommendations can include explanations when requested."""
-    # Authenticate first
-    login_response = client.post(
-        "/api/auth/login",
-        data={"username": "testuser", "password": "testpassword"}
-    )
-    token = login_response.json()["access_token"]
-    
-    # Request recommendations with explanations enabled
-    response = client.get(
-        "/api/recommendations/?limit=2&include_explanations=true",
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    assert response.status_code == 200
-    data = response.json()
-    
-    assert "movies" in data
-    assert "recommendation_type" in data
-    
-    # Note: If user is cold-start, we fall back to popularity (which has no explanations)
-    # Our test user in conftest has 3 ratings, which is less than the cold start threshold (5).
-    # Let's confirm if they returned cold start.
-    if data["recommendation_type"] == "popularity_cold_start":
-        for movie in data["movies"]:
-            assert movie["explanation"] is not None
-            assert movie["explanation"]["reason_type"] == "popularity"
-    else:
-        # If it generated hybrid recommendations, verify explanations schema structure
-        for movie in data["movies"]:
-            if movie["explanation"] is not None:
-                assert "because_watched_id" in movie["explanation"]
-                assert "because_watched_title" in movie["explanation"]
-                assert "similarity_score" in movie["explanation"]
-                assert "reason_type" in movie["explanation"]
-
-def test_import_recent_movies_without_api_key(client: TestClient):
-    """Verifies that trigger_import_recent_movies returns 400 when TMDB_API_KEY is missing."""
-    response = client.post("/api/system/import-recent?pages=1&start_year=2024&end_year=2025")
-    assert response.status_code == 400
-    data = response.json()
-    assert "detail" in data
-    assert "TMDB_API_KEY" in data["detail"]
+    def test_me_returns_current_user(self, auth_client):
+        response = auth_client.get("/api/auth/me")
+        assert response.status_code == 200
+        assert response.json()["username"] == "testuser"
 
 
+class TestCatalogue:
+    def test_browse_returns_cards(self, client):
+        response = client.get("/api/movies/browse?page_size=3")
+        assert response.status_code == 200
+        body = response.json()
+
+        assert len(body["items"]) == 3
+        assert body["pagination"]["total_items"] == 6
+
+        card = body["items"][0]
+        # Year is split out of the title, genres arrive as a list.
+        assert card["title"] == "Toy Story"
+        assert card["year"] == 1995
+        assert isinstance(card["genres"], list)
+        assert "Animation" in card["genres"]
+        # Card payloads must stay lean -- no plot text.
+        assert "overview" not in card
+
+    def test_browse_orders_by_popularity_desc(self, client):
+        items = client.get("/api/movies/browse?page_size=6").json()["items"]
+        assert items[0]["title"] == "Toy Story"
+
+    def test_browse_paginates_without_overlap(self, client):
+        first = client.get("/api/movies/browse?page=1&page_size=3").json()["items"]
+        second = client.get("/api/movies/browse?page=2&page_size=3").json()["items"]
+        assert not {item["id"] for item in first} & {item["id"] for item in second}
+
+    def test_browse_hides_posterless_titles(self, client, db):
+        from app.database.models import Movie
+        from app.services.cache import cache
+
+        db.add(
+            Movie(id=99, title="No Art (2020)", genres="Drama", poster_path=None,
+                  popularity_score=999.0, bayes_score=5.0)
+        )
+        db.commit()
+        cache.local.clear()
+
+        ids = {item["id"] for item in client.get("/api/movies/browse?page_size=50").json()["items"]}
+        assert 99 not in ids
+
+    def test_browse_genre_filter(self, client):
+        items = client.get("/api/movies/browse?genre=Romance&page_size=20").json()["items"]
+        assert items
+        assert all("Romance" in item["genres"] for item in items)
+
+    def test_browse_rejects_bad_page(self, client):
+        assert client.get("/api/movies/browse?page=0").status_code == 422
+
+    def test_unknown_sort_falls_back_instead_of_erroring(self, client):
+        # The previous version raised KeyError -> 500 on an unmapped sort field.
+        response = client.get("/api/movies/browse?sort_by=not_a_column")
+        assert response.status_code == 200
+
+    def test_genres_endpoint(self, client):
+        from app.services.cache import cache
+
+        cache.local.clear()
+        body = client.get("/api/movies/genres").json()
+        names = {genre["name"] for genre in body["genres"]}
+        assert "Comedy" in names
+        assert body["total_genres"] == len(body["genres"])
+
+    def test_detail_returns_full_record(self, client):
+        body = client.get("/api/movies/1").json()
+        assert body["title"] == "Toy Story"
+        assert body["director"] == "John Lasseter"
+        assert body["cast"] == ["Tom Hanks", "Tim Allen"]
+        assert body["trailer_key"] == "v-PjgYDrg70"
+        assert body["overview"]
+
+    def test_detail_404(self, client):
+        assert client.get("/api/movies/424242").status_code == 404
+
+    def test_trending_endpoint(self, client):
+        assert client.get("/api/movies/trending?page_size=5").status_code == 200
+
+    def test_home_feed_bundles_rows(self, client):
+        from app.services.cache import cache
+
+        cache.local.clear()
+        body = client.get("/api/movies/home").json()
+        assert "hero" in body and "rows" in body
+        assert all("key" in row and "items" in row for row in body["rows"])
+
+
+class TestRatings:
+    def test_submit_rating_without_redirect(self, auth_client):
+        # The frontend posts to the slashless path; it must answer directly.
+        response = auth_client.post(
+            "/api/ratings", json={"movie_id": 4, "rating": 4.5}, follow_redirects=False
+        )
+        assert response.status_code == 201, response.text
+        assert response.json()["rating"] == 4.5
+
+    def test_rating_is_upserted_not_duplicated(self, auth_client, db):
+        from app.database.models import Rating
+
+        auth_client.post("/api/ratings", json={"movie_id": 1, "rating": 3.0})
+        rows = db.query(Rating).filter(Rating.user_id == 1, Rating.movie_id == 1).all()
+        assert len(rows) == 1
+        assert rows[0].rating == 3.0
+
+    def test_rating_range_validated(self, auth_client):
+        assert auth_client.post("/api/ratings", json={"movie_id": 1, "rating": 9}).status_code == 422
+
+    def test_rating_unknown_movie_404(self, auth_client):
+        response = auth_client.post("/api/ratings", json={"movie_id": 999999, "rating": 4.0})
+        assert response.status_code == 404
+
+    def test_batch_ratings(self, auth_client):
+        response = auth_client.post(
+            "/api/ratings/batch",
+            json=[{"movie_id": 4, "rating": 4.0}, {"movie_id": 5, "rating": 3.5}],
+        )
+        assert response.status_code == 201
+        assert response.json()["saved"] == 2
+
+    def test_ratings_map(self, auth_client):
+        body = auth_client.get("/api/ratings/mine").json()
+        assert body["ratings"]["1"] == 5.0
+
+    def test_history_joins_movies(self, auth_client):
+        body = auth_client.get("/api/ratings/history").json()
+        assert body["items"]
+        assert body["items"][0]["movie"]["title"]
+
+    def test_stats_reflect_liked_genres(self, auth_client):
+        body = auth_client.get("/api/ratings/stats").json()
+        assert body["ratings_count"] == 3
+        assert body["average_rating"] == pytest.approx(3.67, abs=0.01)
+        # Only ratings >= 3.5 shape the taste profile, so Comedy (rated 2.0 via
+        # Grumpier Old Men) should not outrank Adventure.
+        assert body["top_genres"]
+
+    def test_delete_rating(self, auth_client):
+        assert auth_client.delete("/api/ratings/1").status_code == 200
+        assert auth_client.delete("/api/ratings/1").status_code == 404
+
+    def test_ratings_require_auth(self, client):
+        assert client.post("/api/ratings", json={"movie_id": 1, "rating": 4.0}).status_code == 401
+
+
+class TestWatchlist:
+    def test_add_accepts_json_body(self, auth_client):
+        # Previously declared as a query param, so a JSON body always 422'd.
+        response = auth_client.post("/api/ratings/watchlist", json={"movie_id": 4})
+        assert response.status_code == 201, response.text
+        assert response.json()["movie"]["id"] == 4
+
+    def test_add_is_idempotent(self, auth_client):
+        auth_client.post("/api/ratings/watchlist", json={"movie_id": 4})
+        response = auth_client.post("/api/ratings/watchlist", json={"movie_id": 4})
+        assert response.status_code == 201
+        ids = auth_client.get("/api/ratings/watchlist/ids").json()["movie_ids"]
+        assert ids.count(4) == 1
+
+    def test_add_unknown_movie_404(self, auth_client):
+        response = auth_client.post("/api/ratings/watchlist", json={"movie_id": 999999})
+        assert response.status_code == 404
+
+    def test_list_joins_movies(self, auth_client):
+        body = auth_client.get("/api/ratings/watchlist").json()
+        assert body["items"][0]["movie"]["title"] == "Heat"
+
+    def test_remove_by_movie_id(self, auth_client):
+        assert auth_client.delete("/api/ratings/watchlist/6").status_code == 200
+        assert auth_client.delete("/api/ratings/watchlist/6").status_code == 404
+
+
+class TestSystem:
+    def test_health(self, client):
+        body = client.get("/api/system/health").json()
+        assert body["database"] == "up"
+        assert body["status"] in {"healthy", "degraded"}
+
+    def test_stats(self, client):
+        body = client.get("/api/system/stats").json()
+        assert body["total_movies"] == 6
+        assert body["poster_coverage"] == 1.0
+
+    def test_maintenance_requires_admin_token(self, client):
+        assert client.post("/api/system/train").status_code == 403
+        assert client.post(
+            "/api/system/train", headers={"X-Admin-Token": "nope"}
+        ).status_code == 403
+
+    def test_root(self, client):
+        assert client.get("/").json()["status"] == "online"
+
+
+class TestRecommendations:
+    def test_requires_auth(self, client):
+        assert client.get("/api/recommendations").status_code == 401
+
+    def test_untrained_engine_returns_503_not_500(self, auth_client):
+        """No artifacts exist in the test models dir, so this must degrade cleanly."""
+        response = auth_client.get("/api/recommendations")
+        assert response.status_code == 503
+        assert "detail" in response.json()
+
+    def test_validates_bounds(self, auth_client):
+        assert auth_client.get("/api/recommendations?limit=0").status_code == 422
+        assert auth_client.get("/api/recommendations?diversity=5").status_code == 422

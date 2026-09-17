@@ -1,36 +1,72 @@
-import os
-import zipfile
-import requests
-import pandas as pd
-import numpy as np
-import logging
-from sqlalchemy.orm import Session
-from app.config.settings import settings
-from app.database.connection import SessionLocal, engine, Base
-from app.database.models import Movie, Rating
+"""MovieLens catalogue ingestion.
 
-# Setup logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+Two deliberate departures from the original pipeline:
+
+1. **Individual rating rows are never written to the database.** The archive holds
+   33.8M of them; inserting those through the ORM is what exhausted memory and
+   left the previous database with zero ratings. They are only ever needed for
+   *training*, which reads them straight from CSV (see ``app.ml.dataset``), so the
+   catalogue stores per-title aggregates instead.
+
+2. **Writes go through the sqlite3 driver with ``executemany``.** Seeding 87k
+   movies row-by-row through the ORM spends most of its time constructing objects
+   that are discarded immediately.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import sqlite3
+import zipfile
+from typing import Optional
+
+import numpy as np
+import requests
+
+from app.config.settings import settings
+
 logger = logging.getLogger(__name__)
 
+CATALOGUE_COLUMNS = (
+    "id", "title", "genres", "imdb_id", "tmdb_id", "user_tags",
+    "release_year", "rating_count", "rating_mean", "bayes_score",
+    "popularity_score", "trending_score",
+)
+
+
+def sqlite_path() -> str:
+    """Resolves the on-disk path of the configured SQLite database."""
+    url = settings.database_url
+    if not url.startswith("sqlite"):
+        raise RuntimeError("Direct sqlite3 access requires a SQLite DATABASE_URL.")
+    return url.split("sqlite:///", 1)[1]
+
+
+def connect() -> sqlite3.Connection:
+    """Opens a sqlite3 connection configured for bulk writes."""
+    connection = sqlite3.connect(sqlite_path(), timeout=60.0)
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("PRAGMA synchronous=NORMAL")
+    connection.execute("PRAGMA cache_size=-128000")
+    connection.execute("PRAGMA temp_store=MEMORY")
+    return connection
+
+
 class DataPipeline:
-    def __init__(self):
-        self.data_dir = settings.DATA_DIR
+    """Downloads the MovieLens archive and seeds the movie catalogue."""
+
+    def __init__(self, data_dir: Optional[str] = None):
+        self.data_dir = data_dir or settings.DATA_DIR
         self.zip_path = os.path.join(self.data_dir, "movielens.zip")
 
-    def _detect_extract_dir(self) -> str:
-        """Auto-detects the extracted folder name inside data_dir.
-        
-        MovieLens zips extract to different folder names depending on the dataset:
-        - ml-latest-small/
-        - ml-25m/
-        - ml-latest/
-        """
-        for name in ["ml-latest-small", "ml-25m", "ml-latest"]:
+    # ------------------------------------------------------------------ download
+
+    def _extract_dir(self) -> str:
+        for name in ("ml-latest", "ml-25m", "ml-latest-small"):
             candidate = os.path.join(self.data_dir, name)
-            if os.path.exists(candidate) and os.path.isdir(candidate):
+            if os.path.isdir(candidate):
                 return candidate
-        # Fallback: find any directory starting with 'ml-'
         for entry in os.listdir(self.data_dir):
             full = os.path.join(self.data_dir, entry)
             if os.path.isdir(full) and entry.startswith("ml-"):
@@ -38,228 +74,143 @@ class DataPipeline:
         return os.path.join(self.data_dir, "ml-latest")
 
     def download_dataset(self) -> str:
-        """Downloads the MovieLens dataset from GroupLens if it does not already exist."""
         os.makedirs(self.data_dir, exist_ok=True)
-        
+        extract_dir = self._extract_dir()
+
+        if os.path.isdir(extract_dir) and os.path.exists(os.path.join(extract_dir, "ratings.csv")):
+            logger.info("MovieLens archive already extracted at %s", extract_dir)
+            return extract_dir
+
         if not os.path.exists(self.zip_path):
-            logger.info(f"Downloading dataset from {settings.MOVIELENS_DATASET_URL}...")
-            logger.info("This may take a few minutes for large datasets (25M/latest)...")
-            response = requests.get(settings.MOVIELENS_DATASET_URL, stream=True)
-            response.raise_for_status()
-            
-            total_size = int(response.headers.get('content-length', 0))
-            downloaded = 0
-            
-            with open(self.zip_path, "wb") as f:
-                for chunk in response.iter_content(chunk_size=65536):
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    if total_size > 0:
-                        pct = (downloaded / total_size) * 100
-                        if downloaded % (5 * 1024 * 1024) < 65536:  # Log every ~5MB
-                            logger.info(f"  Download progress: {pct:.1f}% ({downloaded // (1024*1024)}MB / {total_size // (1024*1024)}MB)")
-                            
-            logger.info("Download completed successfully.")
-        else:
-            logger.info("Dataset zip already exists. Skipping download.")
-        
-        # Extract if needed
-        extract_dir = self._detect_extract_dir()
-        if not os.path.exists(extract_dir):
-            logger.info("Extracting dataset...")
-            with zipfile.ZipFile(self.zip_path, "r") as zip_ref:
-                zip_ref.extractall(self.data_dir)
-            extract_dir = self._detect_extract_dir()
-            logger.info(f"Extraction completed. Dataset folder: {extract_dir}")
-        else:
-            logger.info(f"Dataset already extracted at {extract_dir}.")
-            
-        return extract_dir
+            logger.info("Downloading %s ...", settings.MOVIELENS_DATASET_URL)
+            with requests.get(settings.MOVIELENS_DATASET_URL, stream=True, timeout=60) as response:
+                response.raise_for_status()
+                total = int(response.headers.get("content-length", 0))
+                written = 0
+                next_report = 5 * 1024 * 1024
+                with open(self.zip_path, "wb") as handle:
+                    for chunk in response.iter_content(chunk_size=1 << 20):
+                        handle.write(chunk)
+                        written += len(chunk)
+                        if written >= next_report:
+                            next_report += 25 * 1024 * 1024
+                            pct = f"{written / total * 100:.0f}%" if total else "?"
+                            logger.info("  downloaded %d MB (%s)", written // (1 << 20), pct)
 
-    def load_and_preprocess_dfs(self, extract_dir: str):
-        """Loads CSVs from the extracted directory, merges them, and cleans metadata."""
-        movies_path = os.path.join(extract_dir, "movies.csv")
-        ratings_path = os.path.join(extract_dir, "ratings.csv")
+        logger.info("Extracting archive ...")
+        with zipfile.ZipFile(self.zip_path) as archive:
+            archive.extractall(self.data_dir)
+        return self._extract_dir()
+
+    # ---------------------------------------------------------------- catalogue
+
+    def build_catalogue(self, extract_dir: str) -> "pd.DataFrame":
+        """Joins movies, links and tags into catalogue rows with rating aggregates."""
+        import pandas as pd
+
+        from app.ml.dataset import compute_movie_stats
+
+        movies = pd.read_csv(os.path.join(extract_dir, "movies.csv"))
+        movies["title"] = movies["title"].astype(str).str.strip()
+
         links_path = os.path.join(extract_dir, "links.csv")
+        if os.path.exists(links_path):
+            links = pd.read_csv(links_path)
+            links["imdb_id"] = "tt" + links["imdbId"].astype("Int64").astype(str).str.zfill(7)
+            links["tmdb_id"] = links["tmdbId"].astype("Int64").astype(str)
+            links.loc[links["tmdb_id"] == "<NA>", "tmdb_id"] = None
+            movies = movies.merge(links[["movieId", "imdb_id", "tmdb_id"]], on="movieId", how="left")
+        else:
+            movies["imdb_id"] = None
+            movies["tmdb_id"] = None
+
         tags_path = os.path.join(extract_dir, "tags.csv")
-
-        # Check local fallbacks if extracted paths don't exist
-        fallback_dir = r"Movie-Recommendation-System-MOVICO-main\MOVICO\dataset"
-        if not os.path.exists(movies_path):
-            movies_path = os.path.join(fallback_dir, "movies.csv")
-            ratings_path = os.path.join(fallback_dir, "ratings.csv")
-            links_path = None
-            tags_path = None
-
-        logger.info(f"Loading files: movies={movies_path}, ratings={ratings_path}")
-        movies_df = pd.read_csv(movies_path)
-        
-        # For large datasets, log progress
-        logger.info(f"Loading ratings file (this may take a moment for large datasets)...")
-        ratings_df = pd.read_csv(ratings_path)
-        logger.info(f"Loaded {len(movies_df):,} movies and {len(ratings_df):,} ratings from CSV.")
-        
-        # Parse links if available
-        if links_path and os.path.exists(links_path):
-            logger.info(f"Loading links from {links_path}")
-            links_df = pd.read_csv(links_path)
-            links_df["imdbId"] = links_df["imdbId"].astype(str).str.replace(".0", "", regex=False).str.zfill(7)
-            links_df["tmdbId"] = links_df["tmdbId"].astype(str).str.replace(".0", "", regex=False)
-            movies_df = pd.merge(movies_df, links_df, on="movieId", how="left")
+        if os.path.exists(tags_path):
+            logger.info("Aggregating user tags ...")
+            tags = pd.read_csv(tags_path, usecols=["movieId", "tag"])
+            tags["tag"] = tags["tag"].astype(str).str.lower().str.strip()
+            top_tags = (
+                tags.groupby("movieId")["tag"]
+                .apply(lambda series: " ".join(series.value_counts().head(20).index))
+                .rename("user_tags")
+                .reset_index()
+            )
+            movies = movies.merge(top_tags, on="movieId", how="left")
         else:
-            movies_df["imdbId"] = None
-            movies_df["tmdbId"] = None
+            movies["user_tags"] = None
 
-        # Load and aggregate user-generated tags per movie
-        if tags_path and os.path.exists(tags_path):
-            logger.info(f"Loading user-generated tags from {tags_path}...")
-            tags_df = pd.read_csv(tags_path)
-            tags_df["tag"] = tags_df["tag"].astype(str).str.lower().str.strip()
-            # Aggregate unique tags per movie, take top 15 most frequent
-            tag_agg = tags_df.groupby("movieId")["tag"].apply(
-                lambda tags: " ".join(tags.value_counts().head(15).index.tolist())
-            ).reset_index()
-            tag_agg.columns = ["movieId", "user_tags"]
-            movies_df = pd.merge(movies_df, tag_agg, on="movieId", how="left")
-            logger.info(f"Aggregated tags for {len(tag_agg):,} movies.")
-        else:
-            movies_df["user_tags"] = None
+        # Release year from the "Title (1995)" convention MovieLens uses.
+        movies["release_year"] = pd.to_numeric(
+            movies["title"].str.extract(r"\((\d{4})\)\s*$", expand=False), errors="coerce"
+        ).astype("Int64")
 
-        # Basic Validation
-        assert "movieId" in movies_df.columns, "Missing movieId column in movies"
-        assert "title" in movies_df.columns, "Missing title column in movies"
-        assert "genres" in movies_df.columns, "Missing genres column in movies"
-        assert "userId" in ratings_df.columns, "Missing userId column in ratings"
-        assert "movieId" in ratings_df.columns, "Missing movieId column in ratings"
-        assert "rating" in ratings_df.columns, "Missing rating column in ratings"
-        
-        # Clean title column
-        movies_df["title"] = movies_df["title"].str.strip()
-        
-        # Extract release year from title (e.g., "Toy Story (1995)" -> 1995)
-        import re
-        movies_df["release_year"] = movies_df["title"].str.extract(r"\((\d{4})\)$", expand=False)
-        
-        # Calculate popularity scores for movies (mean rating * log(count + 1))
-        logger.info("Computing popularity scores...")
-        agg_stats = ratings_df.groupby("movieId").agg(
-            mean_rating=("rating", "mean"),
-            vote_count=("rating", "count")
+        stats = compute_movie_stats(os.path.join(extract_dir, "ratings.csv"))
+        movies = movies.merge(stats, on="movieId", how="left")
+        for column in ("rating_count", "rating_mean", "bayes_score", "ml_trending"):
+            movies[column] = movies[column].fillna(0.0)
+
+        # Popularity blends the shrunk mean with log volume, so a title needs both
+        # a good score and an audience to rank highly. Raw mean alone lets a movie
+        # with three 5-star ratings outrank The Godfather.
+        movies["popularity_score"] = (
+            movies["bayes_score"] * np.log1p(movies["rating_count"])
+        ).round(4)
+        movies["trending_score"] = movies["ml_trending"].round(4)
+
+        logger.info("Prepared %s catalogue rows", f"{len(movies):,}")
+        return movies
+
+    def seed_catalogue(self, catalogue: "pd.DataFrame") -> int:
+        """Upserts catalogue rows, preserving any TMDB enrichment already present."""
+        import pandas as pd
+
+        records = [
+            (
+                int(row.movieId),
+                str(row.title),
+                str(row.genres),
+                row.imdb_id if isinstance(row.imdb_id, str) else None,
+                row.tmdb_id if isinstance(row.tmdb_id, str) and row.tmdb_id != "nan" else None,
+                row.user_tags if isinstance(row.user_tags, str) else None,
+                int(row.release_year) if not pd.isna(row.release_year) else None,
+                int(row.rating_count),
+                float(row.rating_mean),
+                float(row.bayes_score),
+                float(row.popularity_score),
+                float(row.trending_score),
+            )
+            for row in catalogue.itertuples(index=False)
+        ]
+
+        placeholders = ", ".join("?" * len(CATALOGUE_COLUMNS))
+        updates = ", ".join(
+            f"{col}=excluded.{col}" for col in CATALOGUE_COLUMNS if col != "id"
         )
-        agg_stats["popularity_score"] = agg_stats["mean_rating"] * np.log1p(agg_stats["vote_count"])
-        movies_df = pd.merge(movies_df, agg_stats["popularity_score"], left_on="movieId", right_index=True, how="left")
-        movies_df["popularity_score"] = movies_df["popularity_score"].fillna(0.0)
-
-        # Calculate time-weighted trending score (recent ratings decay less)
-        logger.info("Computing trending scores (time-decayed popularity)...")
-        max_time = ratings_df["timestamp"].max()
-        # Difference in years (using 365.25 days per year)
-        ratings_df["delta_years"] = (max_time - ratings_df["timestamp"]) / (365.25 * 24 * 3600)
-        # Half-life of 1 year: weight = 2^(-delta_years)
-        ratings_df["weight"] = 2.0 ** (-ratings_df["delta_years"])
-        ratings_df["weighted_rating"] = ratings_df["rating"] * ratings_df["weight"]
-        
-        agg_trending = ratings_df.groupby("movieId").agg(
-            sum_weight=("weight", "sum"),
-            sum_weighted_rating=("weighted_rating", "sum")
+        statement = (
+            f"INSERT INTO movies ({', '.join(CATALOGUE_COLUMNS)}) VALUES ({placeholders}) "
+            f"ON CONFLICT(id) DO UPDATE SET {updates}"
         )
-        agg_trending["weighted_mean"] = agg_trending["sum_weighted_rating"] / agg_trending["sum_weight"]
-        agg_trending["trending_score"] = agg_trending["weighted_mean"] * np.log1p(agg_trending["sum_weight"])
-        agg_trending["trending_score"] = agg_trending["trending_score"].fillna(0.0)
-        
-        movies_df = pd.merge(movies_df, agg_trending["trending_score"], left_on="movieId", right_index=True, how="left")
-        movies_df["trending_score"] = movies_df["trending_score"].fillna(0.0)
 
-        # Clean up temporary columns to save memory
-        ratings_df.drop(columns=["delta_years", "weight", "weighted_rating"], inplace=True)
-
-        return movies_df, ratings_df
-
-    def seed_database(self, movies_df: pd.DataFrame, ratings_df: pd.DataFrame, db: Session):
-        """Seeds the database with movies and ratings using fast batch inserts."""
-        # 1. Seed Movies
-        movie_count = db.query(Movie).count()
-        if movie_count == 0:
-            logger.info(f"Seeding movies table with {len(movies_df)} movies...")
-            movie_records = []
-            for _, row in movies_df.iterrows():
-                movie_records.append({
-                    "id": int(row["movieId"]),
-                    "title": str(row["title"]),
-                    "genres": str(row["genres"]),
-                    "imdb_id": str(row["imdbId"]) if pd.notna(row["imdbId"]) else None,
-                    "tmdb_id": str(row["tmdbId"]) if pd.notna(row["tmdbId"]) else None,
-                    "popularity_score": float(row["popularity_score"]),
-                    "trending_score": float(row["trending_score"]),
-                    "user_tags": str(row["user_tags"]) if pd.notna(row.get("user_tags")) else None
-                })
-            
-            # Batch insertion in chunks for large datasets
-            chunk_size = 10000
-            for i in range(0, len(movie_records), chunk_size):
-                chunk = movie_records[i:i + chunk_size]
-                db.bulk_insert_mappings(Movie, chunk)
-                db.commit()
-                if len(movie_records) > chunk_size:
-                    logger.info(f"  Seeded {min(i + chunk_size, len(movie_records))}/{len(movie_records)} movies...")
-                    
-            logger.info(f"Seeded {len(movie_records)} movies successfully.")
-        else:
-            logger.info(f"Movies table already contains {movie_count} records. Skipping seeding.")
-
-        # 2. Seed Ratings
-        rating_count = db.query(Rating).count()
-        if rating_count == 0:
-            logger.info(f"Seeding ratings table with {len(ratings_df):,} ratings... This may take a few minutes for large datasets.")
-            # Convert timestamp to datetime objects
-            ratings_df["datetime"] = pd.to_datetime(ratings_df["timestamp"], unit="s")
-            
-            # Use chunked itertuples for ultra-fast, memory-efficient bulk insertion
-            chunk_size = 100000
-            total_rows = len(ratings_df)
-            
-            for i in range(0, total_rows, chunk_size):
-                chunk_df = ratings_df.iloc[i:i + chunk_size]
-                records = [
-                    {
-                        "user_id": int(r.userId),
-                        "movie_id": int(r.movieId),
-                        "rating": float(r.rating),
-                        "timestamp": r.datetime
-                    }
-                    for r in chunk_df.itertuples(index=False)
-                ]
-                db.bulk_insert_mappings(Rating, records)
-                db.commit()
-                logger.info(f"  Seeded {min(i + chunk_size, total_rows):,}/{total_rows:,} ratings...")
-                
-            logger.info(f"Seeded {total_rows:,} ratings successfully.")
-        else:
-            logger.info(f"Ratings table already contains {rating_count:,} records. Skipping seeding.")
-
-    def run_pipeline(self):
-        """Runs the entire download, merge, seeding, and TMDB enrichment pipeline."""
-        # Ensure database tables exist
-        Base.metadata.create_all(bind=engine)
-        
-        db = SessionLocal()
+        connection = connect()
         try:
-            extract_dir = self.download_dataset()
-            movies_df, ratings_df = self.load_and_preprocess_dfs(extract_dir)
-            self.seed_database(movies_df, ratings_df, db)
-            
-            # Run TMDB metadata enrichment
-            logger.info("Starting TMDB metadata enrichment phase...")
-            from app.pipeline.tmdb_enricher import enrich_movies_from_tmdb
-            enrich_movies_from_tmdb(db)
-            
-            logger.info("Data Pipeline execution completed successfully.")
-        except Exception as e:
-            logger.exception(f"Error executing data pipeline: {e}")
-            raise e
+            with connection:
+                connection.executemany(statement, records)
+            logger.info("Seeded %s catalogue rows", f"{len(records):,}")
         finally:
-            db.close()
+            connection.close()
+        return len(records)
+
+    def run_pipeline(self) -> dict[str, int]:
+        from app.pipeline.migrate import reconcile_schema, rebuild_search_index
+
+        reconcile_schema()
+        extract_dir = self.download_dataset()
+        catalogue = self.build_catalogue(extract_dir)
+        seeded = self.seed_catalogue(catalogue)
+        indexed = rebuild_search_index()
+        return {"movies_seeded": seeded, "search_indexed": indexed}
+
 
 if __name__ == "__main__":
-    pipeline = DataPipeline()
-    pipeline.run_pipeline()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    print(DataPipeline().run_pipeline())
