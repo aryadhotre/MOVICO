@@ -38,6 +38,7 @@ from app.database.schemas import (
     MovieRow,
     PaginatedMovies,
     build_pagination_meta,
+    split_genres,
     split_list,
     split_title,
 )
@@ -79,7 +80,7 @@ def row_to_card(row: Any) -> dict:
         "id": row.id,
         "title": title,
         "year": row.release_year or year_from_title,
-        "genres": split_list(row.genres, "|"),
+        "genres": split_genres(row.genres),
         "poster_path": row.poster_path,
         "backdrop_path": row.backdrop_path,
         "vote_average": row.vote_average,

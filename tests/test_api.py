@@ -258,3 +258,105 @@ class TestRecommendations:
     def test_validates_bounds(self, auth_client):
         assert auth_client.get("/api/recommendations?limit=0").status_code == 422
         assert auth_client.get("/api/recommendations?diversity=5").status_code == 422
+
+
+class TestTitlePresentation:
+    """Regression tests for MovieLens title and genre conventions.
+
+    MovieLens files a leading article at the end ("Matrix, The") and uses the
+    literal string "(no genres listed)" as a null marker. Both reached the UI.
+    """
+
+    @pytest.mark.parametrize(
+        "stored,expected",
+        [
+            ("Matrix, The (1999)", "The Matrix"),
+            ("Shawshank Redemption, The (1994)", "The Shawshank Redemption"),
+            ("Usual Suspects, The (1995)", "The Usual Suspects"),
+            ("Good, the Bad and the Ugly, The (1966)", "The Good, the Bad and the Ugly"),
+            ("American Tail, An (1986)", "An American Tail"),
+            ("Slipping-Down Life, A (1999)", "A Slipping-Down Life"),
+            # Apostrophe articles rejoin without a space.
+            ("Amour fou, L' (1969)", "L'Amour fou"),
+            ("'burbs, The (1989)", "The 'burbs"),
+            # The article inside an alternate title is restored independently.
+            ("Postman, The (Postino, Il) (1994)", "The Postman (Il Postino)"),
+            ("Andalusian Dog, An (Chien andalou, Un) (1929)", "An Andalusian Dog (Un Chien andalou)"),
+            # An a.k.a. marker stays in front of the restored article.
+            (
+                "5th Musketeer, The (a.k.a. Fifth Musketeer, The) (1979)",
+                "The 5th Musketeer (a.k.a. The Fifth Musketeer)",
+            ),
+            # Titles with no displaced article are untouched.
+            ("Pulp Fiction (1994)", "Pulp Fiction"),
+            ("Fight Club (1999)", "Fight Club"),
+        ],
+    )
+    def test_displaced_articles_are_restored(self, stored, expected):
+        from app.database.schemas import split_title
+
+        assert split_title(stored)[0] == expected
+
+    @pytest.mark.parametrize(
+        "stored",
+        [
+            # "Die" here is a verb (the film *Die Mommie Die!*), not the article.
+            "Die, Mommie, Die (2003)",
+            # Trailing words that merely look like articles.
+            "Happy, Texas (1999)",
+            "Crime and Punishment, USA (1959)",
+            "Dancer, Texas Pop. 81 (1998)",
+            # The comma is mid-title, not a displaced article.
+            "I, Robot (2004)",
+        ],
+    )
+    def test_non_articles_are_left_alone(self, stored):
+        from app.database.schemas import split_title
+
+        assert split_title(stored)[0] == stored.rsplit(" (", 1)[0]
+
+    def test_year_is_split_off(self):
+        from app.database.schemas import split_title
+
+        assert split_title("Matrix, The (1999)") == ("The Matrix", 1999)
+        assert split_title("No Year Here")[1] is None
+
+    def test_genre_placeholder_is_dropped(self):
+        from app.database.schemas import split_genres
+
+        assert split_genres("(no genres listed)") == []
+        assert split_genres("Drama|(no genres listed)|Crime") == ["Drama", "Crime"]
+        assert split_genres(None) == []
+
+    def test_card_payload_uses_natural_title(self, client, db):
+        from app.database.models import Movie
+        from app.services.cache import cache
+
+        db.add(
+            Movie(
+                id=77, title="Matrix, The (1999)", genres="Action|(no genres listed)|Sci-Fi",
+                poster_path="/m.jpg", release_year=1999, popularity_score=500.0,
+                bayes_score=4.3, vote_average=8.2,
+            )
+        )
+        db.commit()
+        cache.local.clear()
+
+        card = client.get("/api/movies/browse?page_size=1").json()["items"][0]
+        assert card["title"] == "The Matrix"
+        assert card["genres"] == ["Action", "Sci-Fi"]
+
+    def test_detail_payload_uses_natural_title(self, client, db):
+        from app.database.models import Movie
+
+        db.add(
+            Movie(
+                id=78, title="Godfather, The (1972)", genres="(no genres listed)",
+                poster_path="/g.jpg", release_year=1972,
+            )
+        )
+        db.commit()
+
+        detail = client.get("/api/movies/78").json()
+        assert detail["title"] == "The Godfather"
+        assert detail["genres"] == []

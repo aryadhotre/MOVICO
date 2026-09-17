@@ -38,7 +38,7 @@ from app.database.schemas import (
     WatchlistCreate,
     WatchlistEntry,
     build_pagination_meta,
-    split_list,
+    split_genres,
 )
 from app.services.cache import cache
 
@@ -222,7 +222,7 @@ def get_rating_stats(
         distribution[f"{rating:g}"] += 1
         # Only films the user actually liked should shape their taste profile.
         if rating >= 3.5:
-            genre_counter.update(g for g in split_list(genres, "|") if g != "(no genres listed)")
+            genre_counter.update(split_genres(genres))
         if year:
             decade_counter[f"{int(year) // 10 * 10}s"] += 1
 

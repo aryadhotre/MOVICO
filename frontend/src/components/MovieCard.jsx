@@ -78,6 +78,21 @@ const MovieCard = memo(function MovieCard({
               </span>
             )}
 
+            {/* Spine number, running down the inside edge like a Criterion
+                slipcase. It sits inside the frame deliberately: positioned
+                outside, the carousel's overflow clips the first card's number
+                and every other one lands over the neighbouring poster. */}
+            {spine !== null && (
+              <span
+                className="absolute bottom-0 left-0 top-0 hidden w-5 items-end justify-center
+                           bg-gradient-to-r from-film-950/80 to-transparent pb-3
+                           font-mono text-[10px] tabular-nums text-print-300 sm:flex"
+                style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+              >
+                № {String(spine).padStart(3, '0')}
+              </span>
+            )}
+
             {isAuthenticated && (
               <button
                 type="button"
@@ -96,16 +111,6 @@ const MovieCard = memo(function MovieCard({
               </button>
             )}
           </div>
-
-          {/* Spine number, running up the left edge like a Criterion slipcase. */}
-          {spine !== null && (
-            <span
-              className="absolute -left-6 top-0 hidden font-mono text-2xs tabular-nums text-print-500 lg:block"
-              style={{ writingMode: 'vertical-rl' }}
-            >
-              № {String(spine).padStart(3, '0')}
-            </span>
-          )}
         </div>
 
         <div className="mt-2.5">

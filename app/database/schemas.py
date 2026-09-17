@@ -28,19 +28,114 @@ T = TypeVar("T")
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p"
 _YEAR_SUFFIX = re.compile(r"\s*\((\d{4})\)\s*$")
 
+# MovieLens stores a leading article at the *end* of the title: "The Matrix" is
+# filed as "Matrix, The". 3,860 titles in the catalogue use the convention, across
+# six languages, and rendering them raw is what produced "Matrix, The" on screen.
+#
+# The list is deliberately restricted to articles actually observed as suffixes in
+# this catalogue. A permissive pattern also matches ", USA", ", Texas" and ", Mom",
+# which are ordinary words rather than displaced articles.
+TITLE_ARTICLES = (
+    "The", "A", "An",                          # English
+    "L'", "Le", "La", "Les", "Un", "Une",      # French
+    "Der", "Die", "Das",                       # German
+    "El", "Los", "Las", "Una",                 # Spanish
+    "Il", "Lo", "Gli", "I",                    # Italian
+    "De", "Het",                               # Dutch
+    "En", "Ett", "Den", "Det",                 # Scandinavian
+    "Os",                                      # Portuguese
+)
+
+_ARTICLE_SUFFIX = re.compile(
+    r"^(?P<stem>.+?),\s+(?P<article>" + "|".join(re.escape(a) for a in TITLE_ARTICLES) + r")$"
+)
+
+# One trailing "(...)" group — alternate or original-language titles, and a.k.a.
+# forms, which carry the same displaced article inside the brackets.
+_PARENTHETICAL = re.compile(r"\s*\(([^()]*)\)\s*$")
+
+GENRE_PLACEHOLDER = "(no genres listed)"
+
+# Alternate-title markers that must stay in front of the restored article:
+# "(a.k.a. Fifth Musketeer, The)" becomes "(a.k.a. The Fifth Musketeer)", not
+# "(The a.k.a. Fifth Musketeer)".
+_ALT_TITLE_PREFIX = re.compile(r"^(a\.k\.a\.\s+|aka\s+|alt(?:ernate)?\s+title:\s+)", re.IGNORECASE)
+
+
+def _restore_article(text: str) -> str:
+    """Moves a displaced leading article back to the front."""
+    text = text.strip()
+
+    prefix = ""
+    marker = _ALT_TITLE_PREFIX.match(text)
+    if marker:
+        prefix = marker.group(0)
+        text = text[marker.end():]
+
+    match = _ARTICLE_SUFFIX.match(text)
+    if not match:
+        return f"{prefix}{text}"
+
+    stem = match.group("stem").strip()
+    article = match.group("article")
+
+    # "Die, Mommie, Die" is the film *Die Mommie Die!* — the trailing "Die" is a
+    # verb, not the German article, and moving it yields "Die Die, Mommie". A title
+    # already opening with that word was never article-inverted. The boundary match
+    # matters: the stem here is "Die, Mommie", so a plain "Die " prefix test misses.
+    if re.match(rf"{re.escape(article)}\b", stem, re.IGNORECASE):
+        return f"{prefix}{text}"
+
+    # "Amour fou, L'" rejoins without a space: "L'Amour fou".
+    joiner = "" if article.endswith("'") else " "
+    return f"{prefix}{article}{joiner}{stem}"
+
+
+def natural_title(title: str) -> str:
+    """Renders a MovieLens title the way a person would write it.
+
+    Trailing bracketed groups are peeled off first so the article inside each one
+    is restored independently, which matters for entries like
+    "Postman, The (Postino, Il)" -> "The Postman (Il Postino)".
+    """
+    text = (title or "").strip()
+    suffixes: List[str] = []
+
+    while True:
+        match = _PARENTHETICAL.search(text)
+        if not match:
+            break
+        suffixes.append(match.group(1).strip())
+        text = text[: match.start()]
+
+    parts = [_restore_article(text)]
+    for inner in reversed(suffixes):
+        parts.append(f"({_restore_article(inner)})")
+    return " ".join(part for part in parts if part)
+
 
 def split_title(title: str) -> tuple[str, Optional[int]]:
-    """Separates the MovieLens "Title (1995)" convention into its parts."""
-    match = _YEAR_SUFFIX.search(title or "")
+    """Separates "Matrix, The (1999)" into ("The Matrix", 1999)."""
+    raw = title or ""
+    match = _YEAR_SUFFIX.search(raw)
     if match:
-        return _YEAR_SUFFIX.sub("", title).strip(), int(match.group(1))
-    return (title or "").strip(), None
+        return natural_title(_YEAR_SUFFIX.sub("", raw)), int(match.group(1))
+    return natural_title(raw), None
 
 
 def split_list(value: Optional[str], separator: str = ",") -> List[str]:
     if not value:
         return []
     return [part.strip() for part in value.split(separator) if part.strip()]
+
+
+def split_genres(value: Optional[str]) -> List[str]:
+    """Genre list with MovieLens's "(no genres listed)" filler removed.
+
+    6,570 displayable titles carry that literal string. It is a marker for absent
+    data, not a genre, and it rendered as a chip on the detail page.
+    """
+    return [genre for genre in split_list(value, "|") if genre != GENRE_PLACEHOLDER]
 
 
 # --------------------------------------------------------------------- auth
@@ -115,7 +210,7 @@ class MovieCard(BaseModel):
             "id": getattr(data, "id"),
             "title": title,
             "year": getattr(data, "release_year", None) or year,
-            "genres": split_list(getattr(data, "genres", None), "|"),
+            "genres": split_genres(getattr(data, "genres", None)),
             "poster_path": getattr(data, "poster_path", None),
             "backdrop_path": getattr(data, "backdrop_path", None),
             "vote_average": getattr(data, "vote_average", None),
@@ -154,7 +249,7 @@ class MovieDetail(MovieCard):
             "id": getattr(data, "id"),
             "title": title,
             "year": getattr(data, "release_year", None) or year,
-            "genres": split_list(getattr(data, "genres", None), "|"),
+            "genres": split_genres(getattr(data, "genres", None)),
             "poster_path": getattr(data, "poster_path", None),
             "backdrop_path": getattr(data, "backdrop_path", None),
             "vote_average": getattr(data, "vote_average", None),

@@ -28,7 +28,7 @@ from app.database.schemas import (
     MovieCard,
     RecommendationResponse,
     RecommendedMovie,
-    split_list,
+    split_genres,
     split_title,
 )
 from app.ml.ranker import ScoredMovie, engine
@@ -74,7 +74,7 @@ def _build_explanation(
         if mid in titles
     ]
 
-    own_genres = set(split_list(movie.genres, "|"))
+    own_genres = set(split_genres(movie.genres))
     shared: set[str] = set()
     for mid, _ in scored.because_of:
         shared |= own_genres & profile_genres.get(mid, set())
@@ -153,7 +153,7 @@ class RecommenderService:
         if referenced and explain:
             for row in hydrate(db, list(referenced)).values():
                 titles[row.id] = split_title(row.title)[0]
-                profile_genres[row.id] = set(split_list(row.genres, "|"))
+                profile_genres[row.id] = set(split_genres(row.genres))
 
         results: list[RecommendedMovie] = []
         for item in scored:
