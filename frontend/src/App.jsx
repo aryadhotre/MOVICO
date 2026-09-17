@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import PublicShell from './components/PublicShell';
 import PageSpinner from './components/PageSpinner';
+import ErrorBoundary from './components/ErrorBoundary';
 import { useAuth } from './lib/auth';
 
 /**
@@ -44,8 +45,13 @@ function RedirectIfAuthed({ children }) {
 }
 
 export default function App() {
+  const location = useLocation();
+
   return (
-    <Suspense fallback={<PageSpinner />}>
+    // The boundary resets on navigation: a render error is deterministic, so the
+    // only thing that reliably clears it is mounting a different tree.
+    <ErrorBoundary resetKey={location.pathname}>
+      <Suspense fallback={<PageSpinner />}>
       <Routes>
         <Route
           path="/"
@@ -104,7 +110,8 @@ export default function App() {
         </Route>
 
         <Route path="*" element={<NotFound />} />
-      </Routes>
-    </Suspense>
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, Bookmark, BookmarkCheck, Film, Play, Star, X } from 'lucide-react';
@@ -23,6 +23,23 @@ import {
 import { useAuth } from '../lib/auth';
 
 function TrailerModal({ trailerKey, title, onClose }) {
+  // Escape must close it: the video swallows clicks, so without this the only way
+  // out is the small close button in the corner.
+  useEffect(() => {
+    if (!trailerKey) return undefined;
+    const handler = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handler);
+    // The page behind must not scroll while the trailer is up.
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', handler);
+      document.body.style.overflow = previous;
+    };
+  }, [trailerKey, onClose]);
+
   return (
     <AnimatePresence>
       {trailerKey && (
@@ -32,8 +49,15 @@ function TrailerModal({ trailerKey, title, onClose }) {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          <div className="absolute inset-0 bg-film-950/94 backdrop-blur-sm" onClick={onClose} />
+          <div
+            className="absolute inset-0 bg-film-950/94 backdrop-blur-sm"
+            onClick={onClose}
+            aria-hidden="true"
+          />
           <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${title} trailer`}
             className="relative w-full max-w-5xl border border-print-100/15 bg-black shadow-lift"
             initial={{ scale: 0.97, y: 12 }}
             animate={{ scale: 1, y: 0 }}

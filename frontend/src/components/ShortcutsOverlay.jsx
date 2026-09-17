@@ -59,7 +59,11 @@ export default function ShortcutsOverlay({ open, onClose }) {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15 }}
         >
-          <div className="absolute inset-0 bg-film-950/85 backdrop-blur-sm" onClick={onClose} />
+          <div
+            className="absolute inset-0 bg-film-950/85 backdrop-blur-sm"
+            onClick={onClose}
+            aria-hidden="true"
+          />
 
           <motion.div
             role="dialog"
