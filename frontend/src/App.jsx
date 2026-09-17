@@ -16,6 +16,7 @@ const Signup = lazy(() => import('./pages/Signup'));
 const Onboarding = lazy(() => import('./pages/Onboarding'));
 const Home = lazy(() => import('./pages/Home'));
 const Browse = lazy(() => import('./pages/Browse'));
+const Search = lazy(() => import('./pages/Search'));
 const MovieDetail = lazy(() => import('./pages/MovieDetail'));
 const Recommendations = lazy(() => import('./pages/Recommendations'));
 const Watchlist = lazy(() => import('./pages/Watchlist'));
@@ -81,6 +82,7 @@ export default function App() {
         {/* Public browsing: someone should be able to look before signing up. */}
         <Route element={<PublicShell />}>
           <Route path="/discover" element={<Browse publicMode />} />
+          <Route path="/search" element={<Search />} />
           <Route path="/movie/:id" element={<MovieDetail />} />
         </Route>
 
@@ -104,6 +106,7 @@ export default function App() {
           <Route index element={<Home />} />
           <Route path="recommendations" element={<Recommendations />} />
           <Route path="browse" element={<Browse />} />
+          <Route path="search" element={<Search />} />
           <Route path="watchlist" element={<Watchlist />} />
           <Route path="ratings" element={<Ratings />} />
           <Route path="profile" element={<Profile />} />

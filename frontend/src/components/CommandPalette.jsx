@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CornerDownLeft, Loader2, Search, Star } from 'lucide-react';
+import { ArrowRight, CornerDownLeft, Loader2, Search, Star } from 'lucide-react';
 import { posterUrl } from '../lib/images';
 import { useSearch } from '../lib/queries';
 
@@ -58,6 +58,14 @@ export default function CommandPalette({ open, onClose }) {
     navigate(`/movie/${movie.id}`);
   };
 
+  // The palette is a quick-jump control, capped at twelve. Anything broader
+  // belongs on the results page, reachable in-app or publicly.
+  const seeAll = () => {
+    onClose();
+    const inApp = window.location.pathname.startsWith('/app');
+    navigate(`${inApp ? '/app/search' : '/search'}?q=${encodeURIComponent(debounced)}`);
+  };
+
   const onKeyDown = (event) => {
     if (event.key === 'Escape') {
       onClose();
@@ -67,9 +75,10 @@ export default function CommandPalette({ open, onClose }) {
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       setCursor((index) => Math.max(index - 1, 0));
-    } else if (event.key === 'Enter' && results[cursor]) {
+    } else if (event.key === 'Enter') {
       event.preventDefault();
-      go(results[cursor]);
+      if (results[cursor]) go(results[cursor]);
+      else if (debounced.length >= 2) seeAll();
     }
   };
 
@@ -172,6 +181,19 @@ export default function CommandPalette({ open, onClose }) {
                 ))
               )}
             </div>
+
+            {results.length > 0 && (
+              <button
+                type="button"
+                onClick={seeAll}
+                className="flex w-full items-center justify-between gap-3 border-t border-print-100/10 px-5 py-3 text-left transition-colors hover:bg-print-100/[0.04]"
+              >
+                <span className="font-mono text-2xs uppercase tracking-wider text-print-400">
+                  All results for “{debounced}”
+                </span>
+                <ArrowRight className="h-3.5 w-3.5 text-tungsten-500" />
+              </button>
+            )}
           </motion.div>
         </motion.div>
       )}
