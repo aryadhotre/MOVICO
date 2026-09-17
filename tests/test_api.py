@@ -360,3 +360,87 @@ class TestTitlePresentation:
         detail = client.get("/api/movies/78").json()
         assert detail["title"] == "The Godfather"
         assert detail["genres"] == []
+
+
+class TestCastBilling:
+    """The cast_json column is stored compactly and expanded at the API edge.
+
+    Ten entries for each of ~94k titles, so keys are one letter on disk. A
+    malformed blob must degrade to an empty list rather than failing the whole
+    detail response.
+    """
+
+    def test_expands_compact_keys(self):
+        from app.database.schemas import parse_billing
+
+        assert parse_billing('[{"n": "Keanu Reeves", "c": "Neo", "p": "/a.jpg"}]') == [
+            {"name": "Keanu Reeves", "character": "Neo", "profile_path": "/a.jpg"}
+        ]
+
+    def test_missing_optional_fields_become_none(self):
+        from app.database.schemas import parse_billing
+
+        assert parse_billing('[{"n": "Someone"}]') == [
+            {"name": "Someone", "character": None, "profile_path": None}
+        ]
+
+    @pytest.mark.parametrize(
+        "blob",
+        [
+            None,
+            "",
+            "[]",
+            "not json at all",
+            '{"n": "an object, not a list"}',
+            "[1, 2, 3]",
+            '[{"c": "no name key"}]',
+        ],
+    )
+    def test_degrades_to_empty_rather_than_raising(self, blob):
+        from app.database.schemas import parse_billing
+
+        assert parse_billing(blob) == []
+
+    def test_detail_endpoint_serves_billing(self, client, db):
+        from app.database.models import Movie
+
+        db.add(
+            Movie(
+                id=91,
+                title="Cast Test (2001)",
+                genres="Drama",
+                poster_path="/c.jpg",
+                release_year=2001,
+                cast_list="Alpha Actor, Beta Actor",
+                cast_json='[{"n": "Alpha Actor", "c": "Lead", "p": "/alpha.jpg"},'
+                          ' {"n": "Beta Actor", "c": "Support", "p": null}]',
+            )
+        )
+        db.commit()
+
+        body = client.get("/api/movies/91").json()
+        assert body["billing"][0] == {
+            "name": "Alpha Actor",
+            "character": "Lead",
+            "profile_path": "/alpha.jpg",
+        }
+        assert body["billing"][1]["profile_path"] is None
+        # The plain name list stays for search indexing and the text fallback.
+        assert body["cast"] == ["Alpha Actor", "Beta Actor"]
+
+    def test_card_payload_omits_billing(self, client, db):
+        """Grids must not carry cast data — that is what keeps card payloads lean."""
+        from app.database.models import Movie
+        from app.services.cache import cache
+
+        db.add(
+            Movie(id=92, title="Lean Card (2002)", genres="Drama", poster_path="/l.jpg",
+                  release_year=2002, popularity_score=1.0,
+                  cast_json='[{"n": "Someone", "c": "Role", "p": "/s.jpg"}]')
+        )
+        db.commit()
+        cache.local.clear()
+
+        card = client.get("/api/movies/browse?page_size=50").json()["items"][0]
+        assert "billing" not in card
+        assert "cast" not in card
