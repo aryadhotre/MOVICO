@@ -1,57 +1,59 @@
-version: '3.8'
+# Local stack. SQLite and the in-process cache are the defaults, so this is just
+# the API plus a mounted volume for the database and model artifacts.
+#
+# Postgres and Redis profiles are available for exercising those code paths, but
+# they are opt-in because neither is needed to run the project:
+#   docker compose --profile postgres --profile redis up
 
 services:
-  web:
+  api:
     build: .
-    container_name: movico_backend
-    restart: always
+    container_name: movico_api
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8005:8000"
     environment:
-      - APP_NAME=MOVICO
-      - SECRET_KEY=your-production-secret-key-change-this
-      - ACCESS_TOKEN_EXPIRE_MINUTES=60
-      - USE_SQLITE=false
-      - POSTGRES_HOST=db
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=movico_user
-      - POSTGRES_PASSWORD=movico_pass
-      - POSTGRES_DB=movico_db
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=0
-      - DATA_DIR=/workspace/data
-      - MODELS_DIR=/workspace/models_checkpoint
-      - MOVIELENS_DATASET_URL=https://files.grouplens.org/datasets/movielens/ml-latest.zip
-      - TMDB_API_KEY=${TMDB_API_KEY:-your-tmdb-api-key-here}
-      - TRAINING_SAMPLE_SIZE=5000000
-      - SVD_EPOCHS=20
-      - SVD_FACTORS=50
+      APP_ENV: ${APP_ENV:-development}
+      DEBUG: ${DEBUG:-true}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+      TMDB_API_KEY: ${TMDB_API_KEY:?set TMDB_API_KEY in .env}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      USE_SQLITE: "true"
+      REDIS_ENABLED: "false"
+      DATA_DIR: /workspace/data
+      MODELS_DIR: /workspace/models_checkpoint
     volumes:
+      # The dataset and artifacts are large and slow to rebuild, so they live
+      # outside the container.
       - ./data:/workspace/data
       - ./models_checkpoint:/workspace/models_checkpoint
       - ./logs:/workspace/logs
-    depends_on:
-      - db
-      - redis
 
-  db:
-    image: postgres:15-alpine
+  postgres:
+    image: postgres:16-alpine
     container_name: movico_postgres
-    restart: always
+    profiles: ["postgres"]
+    restart: unless-stopped
     environment:
-      - POSTGRES_USER=movico_user
-      - POSTGRES_PASSWORD=movico_pass
-      - POSTGRES_DB=movico_db
+      POSTGRES_USER: movico_user
+      POSTGRES_PASSWORD: movico_pass
+      POSTGRES_DB: movico_db
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U movico_user -d movico_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     container_name: movico_redis
-    restart: always
+    profiles: ["redis"]
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:

@@ -1,154 +1,173 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { getMe } from '../api/auth';
-import Logo from './Logo';
-import { 
-  Film, Home, Compass, TrendingUp, Sparkles, Bookmark, 
-  Clock, Tag, Star, User, Settings, LogOut, Search, ChevronDown
+import { useEffect, useState } from 'react';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import {
+  Bookmark,
+  Compass,
+  Home,
+  LogOut,
+  Search,
+  Sparkles,
+  Star,
+  User as UserIcon,
 } from 'lucide-react';
+import Logo from './Logo';
+import CommandPalette from './CommandPalette';
+import { useAuth } from '../lib/auth';
+
+const NAV = [
+  { to: '/app', label: 'Home', icon: Home, end: true },
+  { to: '/app/recommendations', label: 'For you', icon: Sparkles },
+  { to: '/app/browse', label: 'Browse', icon: Compass },
+  { to: '/app/watchlist', label: 'Watchlist', icon: Bookmark },
+  { to: '/app/ratings', label: 'Your ratings', icon: Star },
+  { to: '/app/profile', label: 'Taste profile', icon: UserIcon },
+];
+
+/** Bottom tab bar items for small screens; the full nav does not fit. */
+const MOBILE_NAV = NAV.slice(0, 5);
 
 export default function Layout() {
-  const [user, setUser] = useState(null);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef(null);
-  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
+  const location = useLocation();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Route changes should land at the top of the new page.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [location.pathname]);
 
   useEffect(() => {
-    async function fetchUser() {
-      try {
-        const userData = await getMe();
-        setUser(userData);
-      } catch (err) {
-        console.error("Failed to get user:", err);
+    const handler = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setPaletteOpen(true);
       }
-    }
-    fetchUser();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, []);
-
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const handleLogout = () => {
-    localStorage.removeItem('jwt');
-    navigate('/login');
-  };
-
-  const navItems = [
-    { name: 'Home', path: '/', icon: <Home size={18} /> },
-    { name: 'Browse Movies', path: '/browse', icon: <Compass size={18} /> },
-    { name: 'Trending', path: '/trending', icon: <TrendingUp size={18} /> },
-    { name: 'Recommendations', path: '/recommendations', icon: <Sparkles size={18} /> },
-    { name: 'Watchlist', path: '/watchlist', icon: <Bookmark size={18} /> },
-    { name: 'History', path: '/history', icon: <Clock size={18} /> },
-    { name: 'Genres', path: '/genres', icon: <Tag size={18} /> },
-    { name: 'My Ratings', path: '/ratings', icon: <Star size={18} /> },
-  ];
 
   return (
-    <div className="flex h-screen overflow-hidden relative">
-      {/* Ambient background glow */}
-      <div className="ambient-glow" />
-
-      {/* Left Sidebar */}
-      <aside className="w-[260px] bg-white/[0.03] backdrop-blur-2xl border-r border-white/[0.06] flex flex-col h-full z-10 shrink-0 relative">
-        <div className="p-6 pb-4">
-          <Logo className="text-2xl" />
+    <div className="min-h-screen">
+      {/* ------------------------------------------------------------ sidebar */}
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[232px] flex-col border-r border-white/[0.06] bg-ink-950/70 backdrop-blur-xl lg:flex">
+        <div className="px-5 py-5">
+          <Link to="/app" className="inline-flex" aria-label="MOVICO home">
+            <Logo size={28} />
+          </Link>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-          {navItems.map((item) => (
+        <nav className="flex-1 space-y-0.5 px-3" aria-label="Main">
+          {NAV.map(({ to, label, icon: Icon, end }) => (
             <NavLink
-              key={item.name}
-              to={item.path}
-              end={item.path === '/'}
-              className={({ isActive }) => 
-                `flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-300 text-[13px] font-medium ${
-                  isActive 
-                    ? 'nav-pill-active text-accent-primary' 
-                    : 'text-text-secondary hover:bg-white/[0.04] hover:text-text-primary'
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) =>
+                `relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ease-smooth ${
+                  isActive
+                    ? 'bg-white/[0.07] text-white'
+                    : 'text-white/55 hover:bg-white/[0.04] hover:text-white/90'
                 }`
               }
             >
-              {item.icon}
-              {item.name}
+              {({ isActive }) => (
+                <>
+                  {isActive && (
+                    <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand-gradient" />
+                  )}
+                  <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.9} />
+                  {label}
+                </>
+              )}
             </NavLink>
           ))}
         </nav>
 
+        <div className="border-t border-white/[0.06] p-3">
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            className="mb-2 flex w-full items-center gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 text-left text-sm text-white/45 transition-colors hover:border-white/15 hover:text-white/75"
+          >
+            <Search className="h-4 w-4" strokeWidth={1.9} />
+            <span className="flex-1">Search</span>
+            <kbd className="rounded border border-white/10 bg-white/[0.06] px-1.5 py-0.5 text-2xs font-sans text-white/50">
+              ⌘K
+            </kbd>
+          </button>
 
-
-        {/* User Card */}
-        <div className="p-3 border-t border-white/[0.06]">
-          <div className="flex items-center gap-3 p-2.5 bg-white/[0.03] border border-white/[0.06] rounded-xl">
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-accent-primary/30 to-accent-primaryHover/20 flex items-center justify-center shrink-0 border border-white/10">
-              <User size={16} className="text-accent-primary" />
+          <div className="flex items-center gap-2.5 rounded-xl px-2 py-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-gradient text-xs font-bold uppercase text-white">
+              {user?.username?.slice(0, 2) ?? '··'}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-text-primary truncate">
-                {user ? user.username : 'Guest'}
-              </p>
-              <p className="text-[11px] text-text-secondary truncate">
-                {user ? user.email : 'Not logged in'}
-              </p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-white">{user?.username}</p>
+              <p className="truncate text-2xs text-white/40">{user?.email}</p>
             </div>
+            <button
+              type="button"
+              onClick={signOut}
+              aria-label="Sign out"
+              className="btn-ghost h-8 w-8 rounded-lg p-0"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 relative z-[1]">
-        {/* Top Navbar */}
-        <header className="h-14 bg-white/[0.03] backdrop-blur-xl border-b border-white/[0.06] flex items-center justify-between px-6 z-20 shrink-0">
-          <div className="w-80 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/60" size={16} />
-            <input 
-              type="text" 
-              placeholder="Search movies, genres, people..." 
-              className="w-full bg-white/[0.04] border border-white/[0.06] rounded-full py-2 pl-10 pr-4 text-sm text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:border-accent-primary/40 focus:bg-white/[0.06] transition-all duration-200"
-            />
-          </div>
+      {/* ------------------------------------------------------- mobile header */}
+      <header className="sticky top-0 z-40 flex items-center justify-between gap-3 border-b border-white/[0.06] bg-ink-950/85 px-4 py-3 backdrop-blur-xl lg:hidden">
+        <Link to="/app" aria-label="MOVICO home">
+          <Logo size={26} />
+        </Link>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Search"
+            className="btn-icon"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={signOut} aria-label="Sign out" className="btn-icon">
+            <LogOut className="h-4 w-4" />
+          </button>
+        </div>
+      </header>
 
-          <div className="relative" ref={dropdownRef}>
-            <button 
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="flex items-center gap-2 hover:bg-white/[0.04] px-3 py-1.5 rounded-full transition-colors"
+      {/* --------------------------------------------------------------- main */}
+      <main className="pb-24 lg:pb-16 lg:pl-[232px]">
+        <Outlet />
+      </main>
+
+      {/* ----------------------------------------------------- mobile tab bar */}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-white/[0.06] bg-ink-950/90 backdrop-blur-xl lg:hidden"
+        aria-label="Main"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="flex items-stretch">
+          {MOBILE_NAV.map(({ to, label, icon: Icon, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) =>
+                `flex flex-1 flex-col items-center gap-1 py-2.5 text-2xs font-medium transition-colors ${
+                  isActive ? 'text-violet-400' : 'text-white/45'
+                }`
+              }
             >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-accent-primary/30 to-accent-primaryHover/20 flex items-center justify-center border border-white/10">
-                <User size={14} className="text-accent-primary" />
-              </div>
-              <ChevronDown size={14} className="text-text-secondary" />
-            </button>
+              <Icon className="h-[19px] w-[19px]" strokeWidth={2} />
+              <span className="truncate px-1">{label}</span>
+            </NavLink>
+          ))}
+        </div>
+      </nav>
 
-            {dropdownOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-[#121620]/95 backdrop-blur-xl border border-white/[0.08] rounded-xl shadow-2xl py-1 z-30">
-                <NavLink to="/profile" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 px-4 py-2.5 text-sm text-text-secondary hover:bg-white/[0.04] hover:text-text-primary transition-colors">
-                  <User size={14} /> Profile
-                </NavLink>
-                <NavLink to="/settings" onClick={() => setDropdownOpen(false)} className="flex items-center gap-2 px-4 py-2.5 text-sm text-text-secondary hover:bg-white/[0.04] hover:text-text-primary transition-colors">
-                  <Settings size={14} /> Settings
-                </NavLink>
-                <div className="h-px bg-white/[0.06] my-1"></div>
-                <button onClick={handleLogout} className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-text-secondary hover:bg-white/[0.04] hover:text-red-400 transition-colors">
-                  <LogOut size={14} /> Logout
-                </button>
-              </div>
-            )}
-          </div>
-        </header>
-
-        {/* Page Content */}
-        <main className="flex-1 overflow-auto p-6 relative z-0">
-          <Outlet />
-        </main>
-      </div>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   );
 }

@@ -1,178 +1,245 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { getRecommendations } from '../api/recommendations';
-import { getHistory } from '../api/ratings';
-import { getMovieById } from '../api/movies';
-import GlassCard from '../components/GlassCard';
-import ExplanationPanel from '../components/ExplanationPanel';
-import { useRating } from '../context/RatingContext';
-import { Sparkles, Star, RefreshCw, AlertCircle, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { AlertTriangle, RefreshCw, Shuffle, Sparkles, SlidersHorizontal, Star } from 'lucide-react';
+import MovieCard from '../components/MovieCard';
+import ExplanationCard from '../components/ExplanationCard';
+import EmptyState from '../components/EmptyState';
+import { useGenres, useMyRatings, useRecommendations } from '../lib/queries';
 
-function RecommendationTypeBadge({ type }) {
-  const labels = {
-    hybrid: { label: 'Hybrid Pick', color: 'text-accent-primary border-accent-primary/30 bg-accent-primary/10' },
-    collaborative: { label: 'Fans Like You', color: 'text-blue-400 border-blue-400/30 bg-blue-400/10' },
-    content: { label: 'Content Match', color: 'text-cyan-400 border-cyan-400/30 bg-cyan-400/10' },
-    popularity: { label: 'Popular Now', color: 'text-yellow-400 border-yellow-400/30 bg-yellow-400/10' },
-    popularity_cold_start: { label: 'Popular — New User', color: 'text-yellow-400 border-yellow-400/30 bg-yellow-400/10' },
-  };
-  const style = labels[type] || { label: type, color: 'text-text-secondary border-white/20 bg-white/5' };
+/**
+ * Converts the engine's blended score into a "match" percentage.
+ *
+ * The raw score is a weighted sum of z-scores, so it has no natural ceiling and is
+ * meaningless to a user. Ranking the returned set and mapping position onto a band
+ * is honest about what it represents — relative order within this list — rather than
+ * implying a calibrated probability the model never produced.
+ */
+function withMatchScores(movies) {
+  if (!movies?.length) return [];
+  return movies.map((movie, index) => ({
+    ...movie,
+    matchScore: Math.round(97 - (index / Math.max(movies.length - 1, 1)) * 24),
+  }));
+}
+
+function Slider({ label, hint, value, onChange, min = 0, max = 1, step = 0.1 }) {
   return (
-    <span className={`text-xs font-bold px-3 py-1.5 rounded-full border uppercase tracking-wider ${style.color}`}>
-      {style.label}
-    </span>
+    <label className="block">
+      <span className="flex items-center justify-between text-2xs font-medium text-white/60">
+        {label}
+        <span className="tabular-nums text-white/35">{Math.round(value * 100)}%</span>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="mt-2 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/[0.09]
+                   [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:w-3.5
+                   [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full
+                   [&::-webkit-slider-thumb]:bg-violet-500 [&::-webkit-slider-thumb]:shadow-glow
+                   [&::-moz-range-thumb]:h-3.5 [&::-moz-range-thumb]:w-3.5
+                   [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0
+                   [&::-moz-range-thumb]:bg-violet-500"
+      />
+      {hint && <span className="mt-1.5 block text-2xs leading-relaxed text-white/30">{hint}</span>}
+    </label>
   );
 }
 
-import MovieCard from '../components/MovieCard';
-
 export default function Recommendations() {
-  const { ratingVersion, error: ratingError, clearError } = useRating();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
-  const [topGenres, setTopGenres] = useState([]);
+  const [diversity, setDiversity] = useState(1);
+  const [novelty, setNovelty] = useState(0);
+  const [genre, setGenre] = useState('');
+  const [expanded, setExpanded] = useState(null);
+  const [showControls, setShowControls] = useState(false);
 
-  const fetchRecs = useCallback(async (bypass = false) => {
-    if (bypass) setRefreshing(true);
-    else setLoading(true);
-    setError('');
-    try {
-      const res = await getRecommendations({ limit: 12, bypassCache: bypass, includeExplanations: true });
-      setData(res);
-    } catch (e) {
-      setError('Failed to fetch personalized recommendations.');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const { data: genreData } = useGenres();
+  const { data: myRatings } = useMyRatings();
+  const ratingCount = Object.keys(myRatings ?? {}).length;
 
-  // Derive top genres from rating history
-  useEffect(() => {
-    async function deriveGenres() {
-      try {
-        const history = await getHistory();
-        const highRated = (history.items || []).filter(r => r.rating >= 4);
-        if (highRated.length === 0) return;
+  const params = useMemo(
+    () => ({
+      limit: 40,
+      diversity,
+      novelty,
+      ...(genre ? { genres: genre } : {}),
+    }),
+    [diversity, novelty, genre],
+  );
 
-        // Fetch movie details for high-rated entries (up to 20)
-        const movieIds = highRated.slice(0, 20).map(r => r.movie_id);
-        const movies = await Promise.all(movieIds.map(id => getMovieById(id).catch(() => null)));
+  const { data, isLoading, isFetching, error, refetch } = useRecommendations(params);
+  const movies = useMemo(() => withMatchScores(data?.movies), [data]);
 
-        // Count genres
-        const genreCounts = {};
-        movies.forEach(movie => {
-          if (!movie || !movie.genres) return;
-          movie.genres.split('|').forEach(g => {
-            const genre = g.trim();
-            if (genre) genreCounts[genre] = (genreCounts[genre] || 0) + 1;
-          });
-        });
+  const topGenres = (genreData?.genres ?? []).slice(0, 12);
 
-        const sorted = Object.entries(genreCounts)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 4)
-          .map(([name]) => name);
-        setTopGenres(sorted);
-      } catch (_) {}
-    }
-    deriveGenres();
-  }, []);
-
-  useEffect(() => { fetchRecs(false); }, [fetchRecs, ratingVersion]); // re-fetch when rating version bumps
-
-  return (
-    <div className="max-w-7xl mx-auto space-y-16">
-      {/* Inline error banner from rating context */}
-      {ratingError && (
-        <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl">
-          <AlertCircle size={18} className="shrink-0" />
-          <span className="text-sm flex-1">{ratingError}</span>
-          <button onClick={clearError} className="hover:text-red-300 transition-colors">
-            <X size={16} />
-          </button>
-        </div>
-      )}
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-text-primary flex items-center gap-3 tracking-tight">
-            <Sparkles className="text-accent-primary" />
-            Top Picks For You
+  if (error) {
+    const untrained = error.status === 503;
+    return (
+      <div className="mx-auto max-w-2xl px-5 py-20">
+        <div className="card-hairline p-8 text-center">
+          <AlertTriangle className="mx-auto h-8 w-8 text-amber-500" strokeWidth={1.6} />
+          <h1 className="mt-4 text-xl font-semibold text-white">
+            {untrained ? 'The model is not loaded yet' : 'Could not load recommendations'}
           </h1>
-          <p className="text-text-secondary mt-1">Powered by your taste and our AI engine.</p>
-        </div>
-
-        <div className="flex items-center gap-3 flex-wrap">
-          {data?.recommendation_type && (
-            <RecommendationTypeBadge type={data.recommendation_type} />
-          )}
-          <button
-            onClick={() => fetchRecs(true)}
-            disabled={refreshing}
-            className="btn-gold flex items-center gap-2 text-black px-4 py-2 rounded-xl text-sm font-semibold"
-          >
-            <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
-            {refreshing ? 'Refreshing...' : 'Refresh Picks'}
+          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-white/50">
+            {untrained
+              ? 'The recommendation engine has no trained artifacts on disk. Run the training pipeline, then reload.'
+              : error.message}
+          </p>
+          <button type="button" onClick={() => refetch()} className="btn-secondary mt-6 px-5 py-2.5">
+            <RefreshCw className="h-4 w-4" />
+            Try again
           </button>
         </div>
       </div>
+    );
+  }
 
-      {/* Why These Match — derived from history */}
-      {topGenres.length > 0 && (
-        <GlassCard className="p-5 flex flex-col sm:flex-row sm:items-center gap-4">
-          <div className="shrink-0">
-            <p className="text-xs uppercase tracking-widest text-text-secondary font-semibold mb-1">Why These Match</p>
-            <p className="text-sm text-text-primary font-medium">You often rate these genres highly:</p>
+  return (
+    <div className="mx-auto max-w-[1500px] px-5 py-8 sm:px-6">
+      <header className="mb-8">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="eyebrow mb-2 flex items-center gap-1.5 text-violet-400">
+              <Sparkles className="h-3 w-3" />
+              {data?.strategy === 'cold_start' ? 'Warming up' : 'Hybrid engine'}
+            </p>
+            <h1 className="text-3xl font-semibold tracking-tightest text-white">For you</h1>
+            <p className="mt-1.5 text-sm text-white/45">
+              {data
+                ? `${movies.length} films · computed in ${data.execution_ms.toFixed(0)}ms${
+                    data.cached ? ' (cached)' : ''
+                  }`
+                : 'Ranking the catalogue…'}
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {topGenres.map(genre => (
-              <span key={genre} className="flex items-center gap-1 bg-accent-primary/15 border border-accent-primary/25 text-accent-primary px-3 py-1 rounded-full text-sm font-semibold">
-                ★ {genre}
-              </span>
-            ))}
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowControls((open) => !open)}
+              className={`btn-secondary px-4 py-2 text-sm ${showControls ? 'border-white/25' : ''}`}
+              aria-expanded={showControls}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              Tune
+            </button>
+            <button
+              type="button"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="btn-icon"
+              aria-label="Refresh recommendations"
+            >
+              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            </button>
           </div>
-        </GlassCard>
+        </div>
+
+        {showControls && (
+          <div className="mt-5 grid gap-6 rounded-2xl border border-white/[0.07] bg-ink-900/50 p-5 sm:grid-cols-2">
+            <Slider
+              label="Diversity"
+              hint="Higher spreads picks across genres instead of clustering on one."
+              value={diversity}
+              onChange={setDiversity}
+            />
+            <Slider
+              label="Novelty"
+              hint="Higher pushes toward the long tail and away from well-known titles."
+              value={novelty}
+              onChange={setNovelty}
+            />
+
+            <div className="sm:col-span-2">
+              <span className="mb-2 block text-2xs font-medium text-white/60">Restrict to genre</span>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setGenre('')}
+                  className={`chip ${!genre ? 'chip-active' : ''}`}
+                >
+                  Any
+                </button>
+                {topGenres.map(({ name }) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => setGenre(name === genre ? '' : name)}
+                    className={`chip ${genre === name ? 'chip-active' : ''}`}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </header>
+
+      {ratingCount < 5 && !isLoading && (
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-violet-600/25 bg-violet-600/[0.07] px-5 py-4">
+          <p className="text-sm text-white/70">
+            <Star className="mr-1.5 inline h-3.5 w-3.5 text-amber-500" />
+            With {ratingCount} rating{ratingCount === 1 ? '' : 's'} these are mostly popular picks.
+            Rate a few more to personalise them.
+          </p>
+          <Link to="/onboarding" className="btn-primary px-4 py-2 text-sm">
+            Rate films
+          </Link>
+        </div>
       )}
 
-      {/* Movie Grid */}
-      {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <GlassCard key={i} className="aspect-[2/3] animate-pulse bg-white/5 p-0" />
+      {isLoading ? (
+        <div
+          className="grid gap-x-4 gap-y-6"
+          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(clamp(130px, 15vw, 180px), 1fr))' }}
+        >
+          {Array.from({ length: 18 }, (_, index) => (
+            <div key={index}>
+              <div className="skeleton aspect-[2/3] w-full" />
+              <div className="skeleton mt-2 h-3 w-4/5" />
+            </div>
           ))}
         </div>
-      ) : error ? (
-        <GlassCard className="p-8 text-center text-red-400 font-medium">{error}</GlassCard>
-      ) : !data?.movies?.length ? (
-        <GlassCard className="p-12 text-center">
-          <Sparkles className="mx-auto text-text-secondary mb-4" size={48} />
-          <p className="text-text-primary font-semibold mb-1">Nothing to show yet!</p>
-          <p className="text-text-secondary text-sm">Rate a few movies and come back — your AI picks will appear here.</p>
-        </GlassCard>
+      ) : movies.length === 0 ? (
+        <EmptyState
+          icon={Shuffle}
+          title="Nothing matched those filters"
+          description="Try widening the genre restriction or lowering novelty."
+        />
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6 grid-flow-dense">
-          {data.movies.map((movie, index) => {
-            const matchPct = movie.explanation?.similarity_score
-              ? Math.round(movie.explanation.similarity_score * 100)
-              : null;
-            const isTopPick = index === 0;
-            return (
-              <div key={movie.id} className={isTopPick ? 'col-span-2 row-span-2 md:col-span-2 md:row-span-2' : 'col-span-1 row-span-1'}>
-                <MovieCard movie={movie} rank={index + 1} matchPct={matchPct} />
-              </div>
-            );
-          })}
-        </div>
-      )}
+        <div
+          className="grid gap-x-4 gap-y-6"
+          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(clamp(130px, 15vw, 180px), 1fr))' }}
+        >
+          {movies.map((movie, index) => (
+            <div key={movie.id} className="flex flex-col">
+              <MovieCard movie={movie} matchScore={movie.matchScore} priority={index < 6} />
 
-      {/* Explainability for first movie */}
-      {!loading && data?.movies?.length > 0 && data.movies[0].explanation && (
-        <div>
-          <h2 className="section-header mb-5">AI Insight — Top Pick</h2>
-          <ExplanationPanel movie={data.movies[0]} />
+              {movie.explanation && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(expanded === movie.id ? null : movie.id)}
+                    className="mt-2 text-left"
+                    aria-expanded={expanded === movie.id}
+                  >
+                    <ExplanationCard explanation={movie.explanation} compact />
+                  </button>
+
+                  {expanded === movie.id && (
+                    <div className="mt-2 animate-fade-up">
+                      <ExplanationCard explanation={movie.explanation} />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>

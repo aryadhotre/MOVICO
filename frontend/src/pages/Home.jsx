@@ -1,194 +1,219 @@
-import React, { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { getTrending } from '../api/movies';
-import { getRecommendations } from '../api/recommendations';
-import { getMe } from '../api/auth';
-import GlassCard from '../components/GlassCard';
-import RatingInsights from '../components/RatingInsights';
-import WatchlistPanel from '../components/WatchlistPanel';
-import MovieCard from '../components/MovieCard';
-import { useRating } from '../context/RatingContext';
-import { Star, Clock, Calendar, Play, AlertCircle, X } from 'lucide-react';
+import { ArrowRight, Play, Plus, Sparkles, Star } from 'lucide-react';
+import MovieRow from '../components/MovieRow';
+import { backdropSrcSet, backdropUrl } from '../lib/images';
+import {
+  useHomeFeed,
+  useMyRatings,
+  useRecommendations,
+  useToggleWatchlist,
+  useWatchlistIds,
+} from '../lib/queries';
+import { useAuth } from '../lib/auth';
 
-export default function Home() {
-  const { ratingVersion, error: ratingError, clearError } = useRating();
-  const [user, setUser] = useState(null);
-  const [heroMovie, setHeroMovie] = useState(null);
-  const [trending, setTrending] = useState([]);
-  const [loadingHero, setLoadingHero] = useState(true);
-  const [loadingTrending, setLoadingTrending] = useState(true);
-  const [errorHero, setErrorHero] = useState('');
-  const [errorTrending, setErrorTrending] = useState('');
+/** How many ratings before the model has enough signal to personalise well. */
+const RATINGS_TARGET = 10;
 
-  useEffect(() => {
-    async function fetchData() {
-      // Execute all 3 section requests in parallel for maximum speed
-      Promise.allSettled([
-        getMe().then(u => setUser(u)).catch(() => {}),
-        getRecommendations({ limit: 1, includeExplanations: true })
-          .then(recs => {
-            if (recs && recs.movies && recs.movies.length > 0) {
-              setHeroMovie(recs.movies[0]);
-            }
-          })
-          .catch(() => setErrorHero('Failed to load recommendation.'))
-          .finally(() => setLoadingHero(false)),
-        getTrending(1, 6)
-          .then(trend => {
-            if (trend && trend.items) {
-              setTrending(trend.items);
-            }
-          })
-          .catch(() => setErrorTrending('Failed to load trending movies.'))
-          .finally(() => setLoadingTrending(false))
-      ]);
-    }
-    fetchData();
-  }, [ratingVersion]); // re-fetch whenever a rating is submitted
+function HeroSpotlight({ movie }) {
+  const { data: savedIds } = useWatchlistIds();
+  const toggleWatchlist = useToggleWatchlist();
+  const saved = savedIds?.has(Number(movie.id)) ?? false;
 
   return (
-    <div className="space-y-20">
-      {/* Inline error banner from rating context */}
-      {ratingError && (
-        <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl">
-          <AlertCircle size={18} className="shrink-0" />
-          <span className="text-sm flex-1">{ratingError}</span>
-          <button onClick={clearError} className="hover:text-red-300 transition-colors">
-            <X size={16} />
-          </button>
-        </div>
-      )}
-
-      {/* Hero Section */}
-      <section>
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-bold text-accent-secondary tracking-wider uppercase">
-              {user ? `Good evening, ${user.username}` : 'Welcome'}
-            </span>
-            <span className="text-xs text-text-secondary/50">•</span>
-            <span className="text-xs text-text-secondary/80 font-medium">Powered by MOVICO AI</span>
-          </div>
-          <h1 className="text-4xl md:text-6xl font-display text-text-primary tracking-wide uppercase leading-tight drop-shadow-md">
-            What should we <span className="text-accent-gold">watch today?</span>
-          </h1>
-          <p className="text-text-secondary/80 text-sm md:text-base mt-2 max-w-lg">Personalized recommendations, just for you, powered by hybrid AI.</p>
-        </div>
-
-        <GlassCard className="relative overflow-hidden flex flex-col min-h-[450px] md:min-h-[500px] w-full p-0 shadow-2xl">
-          {loadingHero ? (
-            <div className="flex-1 bg-white/[0.03] animate-pulse flex items-center justify-center">
-              <span className="text-text-secondary/60 text-sm">Loading your personalized pick...</span>
-            </div>
-          ) : errorHero ? (
-            <div className="flex-1 bg-white/[0.03] flex items-center justify-center text-red-400/80 p-8 text-sm">
-              {errorHero}
-            </div>
-          ) : heroMovie ? (
-            <>
-              {/* Widescreen Backdrop */}
-              <div 
-                className="absolute inset-0 bg-cover bg-center z-0"
-                style={{ backgroundImage: `url(${heroMovie.backdrop_url || heroMovie.poster_url})` }}
-              />
-              {/* Heavy Cinematic Gradient Overlay */}
-              <div className="absolute inset-0 bg-gradient-to-r from-[#0B0E14] via-[#0B0E14]/80 to-transparent z-0" />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0B0E14] via-transparent to-transparent z-0" />
-              
-              <div className="relative z-10 p-8 md:p-14 flex flex-col justify-end flex-1 w-full md:w-2/3 h-full pb-10">
-                <div className="flex items-center gap-2 mb-5">
-                  <span className="bg-accent-gold text-black text-[10px] font-extrabold px-3 py-1.5 rounded-md uppercase tracking-widest shadow-lg shadow-accent-gold/20">
-                    Recommended for you
-                  </span>
-                </div>
-
-                <h2 className="text-4xl md:text-6xl font-display text-white mb-4 leading-none tracking-wide uppercase drop-shadow-lg">
-                  {heroMovie.title}
-                </h2>
-                
-                <div className="flex flex-wrap items-center gap-5 text-sm text-white/90 mb-6 font-medium drop-shadow-md">
-                  <div className="flex items-center gap-1.5 text-rating font-bold bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm border border-white/10">
-                    <Star size={14} className="fill-rating" />
-                    <span>{heroMovie.vote_average ? heroMovie.vote_average.toFixed(1) : 'NR'}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Calendar size={14} className="text-text-secondary" />
-                    <span>{heroMovie.release_date ? heroMovie.release_date.substring(0, 4) : 'N/A'}</span>
-                  </div>
-                  {heroMovie.runtime && (
-                    <div className="flex items-center gap-1.5">
-                      <Clock size={14} className="text-text-secondary" />
-                      <span>{heroMovie.runtime} min</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap gap-2 mb-8">
-                  {heroMovie.genres && heroMovie.genres.split('|').map(g => (
-                    <span key={g} className="text-xs border border-white/20 rounded-full px-4 py-1.5 bg-black/40 backdrop-blur-md text-white/90 font-medium">
-                      {g}
-                    </span>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap gap-4">
-                  <Link 
-                    to="/recommendations" 
-                    className="btn-gold flex items-center justify-center gap-2 py-3.5 px-8 rounded-xl text-black font-extrabold text-sm tracking-wide transition-all shadow-[0_10px_30px_rgba(232,184,75,0.25)]"
-                  >
-                    <Play size={18} className="fill-black" />
-                    Get Recommendation
-                  </Link>
-                  <Link 
-                    to="/browse"
-                    className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white px-8 py-3.5 rounded-xl font-bold text-sm transition-all duration-200"
-                  >
-                    Browse All Movies
-                  </Link>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="flex-1 bg-white/[0.03] flex items-center justify-center p-8">
-              <span className="text-text-secondary/60 text-sm">No recommendations available. Start rating some movies!</span>
-            </div>
-          )}
-        </GlassCard>
-      </section>
-
-      {/* Trending Section */}
-      <section>
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="section-header">Popular Among Users</h2>
-          <Link to="/trending" className="text-accent-primary hover:text-accent-primaryHover text-xs font-semibold transition-colors uppercase tracking-wider">
-            View All →
-          </Link>
-        </div>
-
-        {loadingTrending ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {[1,2,3,4,5,6].map(i => (
-              <GlassCard key={i} className="aspect-[2/3] animate-pulse bg-white/[0.03] p-0" />
-            ))}
-          </div>
-        ) : errorTrending ? (
-          <div className="text-red-400/80 p-4 text-sm">{errorTrending}</div>
+    <section className="relative -mt-px overflow-hidden">
+      <div className="relative h-[62svh] min-h-[420px] w-full">
+        {movie.backdrop_path ? (
+          <img
+            src={backdropUrl(movie.backdrop_path, 1280)}
+            srcSet={backdropSrcSet(movie.backdrop_path)}
+            sizes="100vw"
+            alt=""
+            /* Above the fold, so it must not be lazy or low priority. */
+            loading="eager"
+            fetchpriority="high"
+            decoding="async"
+            className="absolute inset-0 h-full w-full object-cover object-top"
+          />
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-5">
-            {trending.map((movie, index) => (
-              <MovieCard key={movie.id} movie={movie} rank={index + 1} />
-            ))}
-          </div>
+          <div className="absolute inset-0 bg-ink-850" />
         )}
-      </section>
 
-      {/* User Dashboard Section */}
-      {user && (
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <RatingInsights />
-          <WatchlistPanel />
-        </section>
+        {/* Two-axis scrim so the copy is readable over any artwork. */}
+        <div className="absolute inset-0 bg-gradient-to-t from-ink-950 via-ink-950/55 to-ink-950/15" />
+        <div className="absolute inset-0 bg-gradient-to-r from-ink-950 via-ink-950/40 to-transparent" />
+
+        <div className="absolute inset-x-0 bottom-0 p-6 sm:p-10 lg:p-14">
+          <div className="max-w-xl">
+            <p className="eyebrow mb-3 flex items-center gap-1.5 text-violet-400">
+              <Sparkles className="h-3 w-3" />
+              Tonight&apos;s pick for you
+            </p>
+            <h1 className="text-balance text-3xl font-semibold leading-tight tracking-tightest text-white sm:text-4xl lg:text-5xl">
+              {movie.title}
+            </h1>
+
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/55">
+              {movie.year && <span className="tabular-nums">{movie.year}</span>}
+              {movie.vote_average > 0 && (
+                <span className="flex items-center gap-1 text-amber-500">
+                  <Star className="h-3.5 w-3.5" style={{ fill: 'currentColor' }} />
+                  <span className="tabular-nums font-semibold">
+                    {movie.vote_average.toFixed(1)}
+                  </span>
+                </span>
+              )}
+              {movie.genres?.length > 0 && <span>{movie.genres.slice(0, 3).join(' · ')}</span>}
+            </div>
+
+            {movie.explanation?.headline && (
+              <p className="mt-4 inline-flex max-w-full items-center gap-2 rounded-full border border-violet-600/30 bg-violet-600/10 px-3.5 py-1.5 text-2xs font-medium text-violet-300">
+                <Sparkles className="h-3 w-3 shrink-0" />
+                <span className="truncate">{movie.explanation.headline}</span>
+              </p>
+            )}
+
+            <div className="mt-7 flex flex-wrap items-center gap-3">
+              <Link to={`/movie/${movie.id}`} className="btn-primary px-6 py-2.5">
+                <Play className="h-4 w-4" style={{ fill: 'currentColor' }} />
+                View details
+              </Link>
+              <button
+                type="button"
+                onClick={() => toggleWatchlist.mutate({ movieId: movie.id, saved })}
+                className="btn-secondary px-5 py-2.5"
+              >
+                <Plus className={`h-4 w-4 transition-transform ${saved ? 'rotate-45' : ''}`} />
+                {saved ? 'In watchlist' : 'Watchlist'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OnboardingNudge({ count }) {
+  const remaining = Math.max(0, RATINGS_TARGET - count);
+  const progress = Math.min(100, (count / RATINGS_TARGET) * 100);
+
+  return (
+    <div className="card-hairline ring-gradient flex flex-col gap-5 p-6 sm:flex-row sm:items-center">
+      <div className="flex-1">
+        <h2 className="text-lg font-semibold text-white">
+          {count === 0
+            ? 'Rate a few films to unlock recommendations'
+            : `${remaining} more rating${remaining === 1 ? '' : 's'} to go`}
+        </h2>
+        <p className="mt-1.5 text-sm leading-relaxed text-white/50">
+          The model needs around {RATINGS_TARGET} ratings to place you in the taste space.
+          Until then you&apos;re seeing what&apos;s broadly popular.
+        </p>
+
+        <div className="mt-4 h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-white/[0.07]">
+          <div
+            className="h-full rounded-full bg-brand-gradient transition-[width] duration-500 ease-smooth"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <p className="mt-2 text-2xs tabular-nums text-white/35">
+          {count} of {RATINGS_TARGET}
+        </p>
+      </div>
+
+      <Link to="/onboarding" className="btn-primary shrink-0 px-5 py-2.5">
+        Rate films
+        <ArrowRight className="h-4 w-4" />
+      </Link>
+    </div>
+  );
+}
+
+export default function Home() {
+  const { user } = useAuth();
+  const { data: feed, isLoading: feedLoading } = useHomeFeed();
+  const { data: myRatings } = useMyRatings();
+  const { data: recs, isLoading: recsLoading, error: recsError } = useRecommendations({
+    limit: 20,
+  });
+
+  const ratingCount = Object.keys(myRatings ?? {}).length;
+  const isColdStart = ratingCount < RATINGS_TARGET;
+
+  // The spotlight prefers a personalised pick with artwork; it falls back to the
+  // catalogue hero when the engine has nothing yet.
+  const spotlight = useMemo(() => {
+    const personalised = (recs?.movies ?? []).find((movie) => movie.backdrop_path);
+    if (personalised && !isColdStart) return personalised;
+    return feed?.hero?.find((movie) => movie.backdrop_path) ?? null;
+  }, [recs, feed, isColdStart]);
+
+  const personalRow = useMemo(() => {
+    const items = recs?.movies ?? [];
+    if (items.length === 0) return [];
+    // Skip whatever is already occupying the spotlight.
+    return items.filter((movie) => movie.id !== spotlight?.id);
+  }, [recs, spotlight]);
+
+  const greeting = user?.username ? `Welcome back, ${user.username}` : 'Welcome back';
+
+  return (
+    <div>
+      {spotlight ? (
+        <HeroSpotlight movie={spotlight} />
+      ) : (
+        <div className="h-[30svh] min-h-[200px]">
+          {feedLoading && <div className="skeleton h-full w-full rounded-none" />}
+        </div>
       )}
+
+      <div className="mx-auto max-w-[1500px] space-y-12 px-5 py-10 sm:px-6">
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tightest text-white">{greeting}</h2>
+            <p className="mt-1 text-sm text-white/45">
+              {ratingCount > 0
+                ? `${ratingCount} film${ratingCount === 1 ? '' : 's'} rated so far`
+                : 'Let’s find out what you like'}
+            </p>
+          </div>
+          <Link to="/app/recommendations" className="btn-secondary px-4 py-2 text-sm">
+            All recommendations
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </header>
+
+        {isColdStart && <OnboardingNudge count={ratingCount} />}
+
+        {!recsError && (personalRow.length > 0 || recsLoading) && (
+          <MovieRow
+            title={isColdStart ? 'Popular to get you started' : 'Picked for you'}
+            subtitle={
+              isColdStart
+                ? 'Rate a few of these and the list will change'
+                : recs?.strategy === 'hybrid'
+                  ? 'Blended from collaborative and content signal'
+                  : undefined
+            }
+            items={personalRow}
+            loading={recsLoading}
+            priorityCount={4}
+          />
+        )}
+
+        {feed?.rows?.map((row) => (
+          <MovieRow
+            key={row.key}
+            title={row.title}
+            subtitle={row.subtitle}
+            items={row.items}
+            numbered={row.key === 'trending'}
+          />
+        ))}
+
+        {feedLoading && <MovieRow title="Trending this week" items={[]} loading />}
+      </div>
     </div>
   );
 }

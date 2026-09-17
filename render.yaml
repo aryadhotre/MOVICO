@@ -1,0 +1,47 @@
+# Render blueprint for the MOVICO API.
+#
+# Deliberately a single web service with a persistent disk, not a web service plus
+# Postgres plus Redis:
+#
+# * The catalogue is read-mostly and the models are numpy artifacts on disk, so
+#   SQLite on a mounted disk is both faster and simpler than a network database.
+# * The in-process cache beats Redis for a single instance — no serialisation and
+#   no network hop — so Redis would add a dependency and a cost for nothing.
+#
+# Both choices keep this inside free tiers, which is the constraint.
+services:
+  - type: web
+    name: movico-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/system/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: USE_SQLITE
+        value: "true"
+      - key: REDIS_ENABLED
+        value: "false"
+      - key: DATA_DIR
+        value: /var/data
+      - key: MODELS_DIR
+        value: /var/data/models_checkpoint
+      # Generated once by Render and kept; regenerating it would invalidate every
+      # issued token.
+      - key: SECRET_KEY
+        generateValue: true
+      # Set these in the Render dashboard, not here.
+      - key: TMDB_API_KEY
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+    disks:
+      - name: movico-data
+        mountPath: /var/data
+        # Holds movico.db plus the trained artifacts (~90MB of model pickles).
+        sizeGB: 2

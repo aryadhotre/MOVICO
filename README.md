@@ -1,205 +1,374 @@
-# MOVICO — Production-Grade Movie Recommendation Backend
+<div align="center">
 
-MOVICO is a high-performance, production-quality movie recommendation service built with **FastAPI**, **SQLAlchemy**, **Redis**, and **scikit-learn / SciPy**.
+# MOVICO
 
-It is engineered to run on the **MovieLens Latest (33M+ ratings, 86K+ movies)** dataset — the largest publicly available movie ratings dataset — and dynamically enriches movies with **TMDB metadata** (posters, plots, cast, directors, trailers) to enable frontend developers to build stunning, Netflix-quality interfaces with a single API call.
+**A hybrid film recommender that explains its own picks.**
 
----
+Implicit-ALS collaborative filtering + a shrunk item-item neighbourhood + weighted
+multi-channel content similarity, fused and diversity re-ranked, over 33.1M
+MovieLens ratings and an 86k-title catalogue enriched from TMDB.
 
-## 🚀 Key Features
+FastAPI · SQLite · NumPy/SciPy · React · Vite · Tailwind
 
-*   **Hybrid Recommendation Engine**: Combines Funk SVD Matrix Factorization (Collaborative Filtering) with multi-signal TF-IDF representation (Content-Based) and a time-decayed Popularity baseline.
-*   **Explainable Recommendations**: Offers optional "Because you watched **X**" explanations using real-time TF-IDF cosine similarity against the user's high-rated history.
-*   **Time-Decayed Trending Engine**: Dynamically calculates trending scores by applying exponential decay weights to recent user ratings.
-*   **8-Channel Content Features**: Combines genres (3x weight), title, overview, director (2x weight), cast, user-generated tags, release decade, and language for hyper-accurate content recommendations.
-*   **TMDB Metadata Enrichment**: Automated batch enrichment of 86K+ movies with poster URLs, backdrop URLs, cast lists, directors, and runtimes.
-*   **Pagination & Sorting**: Browse and search endpoints are fully paginated with sorting options (`popularity`, `trending`, `title`, `vote_average`, `release_date`).
-*   **Redis Caching**: Sub-millisecond recommendation retrieval with soft fallback when Redis is offline.
-*   **Docker-Ready**: Multi-container orchestration with PostgreSQL + Redis, or local SQLite mode.
+</div>
 
 ---
 
-## 📐 Architecture Overview
+## Why this exists
 
-```mermaid
-graph TD
-    A[Client / Frontend App] -->|REST API| B[FastAPI Web Server]
-    B -->|Check Cache| C[(Redis Cache)]
-    B -->|DB Queries & Auth| D[(Database)]
-    B -->|Orchestrate Recommendations| E[Recommender Coordinator]
-    
-    E -->|Cache Miss| F[Hybrid Recommendation Engine]
-    F -->|Collaborative Filtering| G[Funk SVD Model]
-    F -->|Content Filtering| H[TF-IDF Movie Similarity]
-    F -->|Explainability Engine| X["Explainers (TF-IDF Cosine Similarity)"]
-    F -->|Cold-Start Fallback| I[Popularity & Trending Models]
-    
-    J[Pipeline Manager] -->|Ingest & Clean| K[MovieLens Latest - 33M ratings]
-    J -->|Enrich Metadata| L[TMDB API - Posters, Cast, Plots]
-    J -->|Calculate Features| M[Matrix Builders]
-    M -->|Generate Sparse CSR / TF-IDF| F
-    J -->|Bulk Seed| D
+Most portfolio recommenders stop at "I trained an SVD and printed the top 10". The
+interesting problems start after that:
+
+- A latent factor model can't rank a film released last week — it has no
+  interactions. A content model can, but only badly.
+- Ranking purely by predicted relevance returns ten near-identical films. Correct,
+  and useless.
+- A new user has no embedding at all, and retraining per signup is not an option.
+- "90% accuracy" is not a meaningful claim about a top-N recommender, and the
+  metrics that *are* meaningful need a stated evaluation protocol to mean anything.
+
+MOVICO is built around those four problems.
+
+---
+
+## Results
+
+Measured under a **strong-generalisation** protocol (definition below), 4,981
+held-out users, full 43,853-item catalogue, no negative sampling:
+
+| Model | HR@10 | HR@50 | NDCG@10 | Recall@20 | AUC | Coverage |
+|---|---|---|---|---|---|---|
+| Popularity baseline | 0.295 | 0.539 | 0.065 | 0.083 | 0.970 | 0.005 |
+| Item-item kNN | 0.394 | 0.652 | 0.098 | 0.120 | 0.990 | 0.043 |
+| Implicit ALS | 0.454 | 0.768 | 0.109 | 0.160 | 0.912 | 0.074 |
+| **Hybrid (fused)** | **0.454** | 0.756 | **0.116** | **0.163** | 0.944 | 0.060 |
+
+**Lift over the popularity baseline: 1.54× HR@10, 1.78× NDCG@10, 1.98× Recall@20,
+12.3× catalogue coverage.**
+
+### A note on "accuracy"
+
+Ranking AUC is the number that looks best here, and it is the one worth trusting
+least. The popularity baseline scores **0.970** on it — because over an 87k-title
+catalogue, almost every pair a model is asked to order is trivially easy. Any model
+clears 90% AUC on this task, so "94% accurate" would be true and say nothing.
+
+Hit rate and NDCG are the metrics that separate a recommender from a bestseller
+list, which is why the baseline is reported beside every number rather than omitted.
+A recommender is only as good as the margin by which it beats "just show what's
+popular".
+
+### The evaluation protocol, precisely
+
+Weak protocols inflate these numbers by 2-5×, so this one is stated in full:
+
+1. **Held-out users, not held-out ratings.** Evaluation users are removed from the
+   training matrix entirely. Their embeddings are produced by the same fold-in path
+   that serves a real signup, so the measurement reflects the live experience.
+2. **Chronological split.** Each user's history is cut by time — earliest 80% is the
+   visible profile, most recent 20% is the target. The task is predicting the
+   future, not interpolating a random hole.
+3. **Full-catalogue ranking.** Every unseen title competes. Sampling 100 negatives
+   (very common, rarely disclosed) inflates hit rate several-fold.
+4. **Baseline always reported.** Including coverage and Gini, because a model that
+   only ever surfaces the same 200 blockbusters can post good accuracy while being
+   worthless.
+
+Regenerate with `python -m app.ml.train`; the report lands in
+`models_checkpoint/evaluation_metrics.json` and is served at `/api/system/metrics`.
+
+---
+
+## How the engine works
+
+```
+                    ratings.csv (33.1M)          catalogue (86.7k titles, TMDB)
+                           │                                │
+                    ┌──────┴──────┐                         │
+                    ▼             ▼                         ▼
+              implicit ALS    item-item kNN          multi-channel TF-IDF
+              (f=128, CG)     (top-200, shrunk)      (8 weighted channels)
+                    │             │                         │
+                    └─────┬───────┴────────────┬────────────┘
+                          ▼                    ▼
+                    z-score fusion  +  quality prior (shrunk mean)
+                                   │
+                                   ▼
+                     MMR diversity + novelty re-rank
+                                   │
+                                   ▼
+                     ranked list + per-item attribution
+```
+
+### 1. Implicit ALS with a batched conjugate-gradient solver
+
+The Hu/Koren/Volinsky objective, with two refinements that matter:
+
+**Conjugate-gradient inner solve** (Takács et al., 2011). The exact ridge solve is
+`O(f³ + n_u f²)` per user. CG reaches effectively the same point in three iterations
+at `O(n_u f)` per step.
+
+**A batched solver.** This was the actual bottleneck. Solving each user's system in
+a Python loop spent nearly all its time on interpreter and NumPy dispatch overhead —
+an average profile touches only a few dozen items, so every call was overhead-bound.
+Advancing the *whole batch* together turns the solve into four BLAS and sparse
+kernels (`P @ YtY`, a chunked sampled dense-dense product, and a sparse-dense
+scatter):
+
+| Solver | Per iteration (20.6M observations, f=128) |
+|---|---|
+| Per-user Python loop | 474 s |
+| Batched CG (this) | **71 s** |
+
+Numerically identical — both report observed-RMSE 0.5302 after iteration 1 — but
+6.7× faster, and it scales with cores instead of with interpreter speed.
+
+**Frequency-scaled regularisation** (Rendle et al., 2022): penalising every
+embedding equally over-regularises long profiles and under-regularises the tail.
+Scaling by `(count)^ν` closes much of the reported gap to far costlier models.
+
+### 2. Item-item neighbourhood
+
+Cosine similarity over co-occurrence, with two corrections that decide whether this
+model is useful or noise:
+
+- **Shrinkage.** Raw cosine on sparse data is dominated by coincidence — two obscure
+  films sharing their only two viewers score 1.0. Damping by `n/(n+h)` pushes those
+  to zero while leaving well-supported pairs alone.
+- **Popularity damping.** Normalising by `‖x‖^α` with α<1 stops blockbusters from
+  being everyone's nearest neighbour, which is what otherwise collapses
+  neighbourhood recommendations onto the head of the catalogue.
+
+It also supplies the **attribution**: "because you liked X" is a read-out of which
+profile items actually contributed the most score, not a plausible-looking match
+found after the fact.
+
+### 3. Multi-channel content model
+
+The naive approach — concatenate all metadata into one string, run one TF-IDF — has
+a structural flaw: a 60-word plot summary contributes ~60 terms while the genre list
+contributes three, so genre agreement is drowned out no matter how often you repeat
+it.
+
+Here each field is vectorised in its own space, **L2-normalised within that space**,
+then scaled by an explicit weight. Every channel contributes a bounded, tunable
+share independent of its verbosity:
+
+| Channel | Weight | Signal |
+|---|---|---|
+| genres | 1.00 | strongest single predictor of taste agreement |
+| keywords | 0.85 | TMDB plot keywords — themes, not words |
+| tags | 0.85 | MovieLens folk tags ("mindfuck", "based on a book") |
+| director | 0.75 | authorship; a strong stylistic fingerprint |
+| cast | 0.60 | shared leads, damped so ensembles don't dominate |
+| overview | 0.55 | free text, the noisiest channel |
+| era | 0.30 | release decade |
+| language | 0.25 | mostly separates non-English cinema |
+
+Names become single tokens (`christopher_nolan`), so two films match on one strong
+token rather than on "Christopher" matching every other Christopher.
+
+This is what makes cold start and new releases work: a film released last week has
+no collaborative signal, but it has genres, a director and a plot.
+
+### 4. Fold-in serving
+
+Application users are **never in the training matrix**. Their embedding is solved on
+demand from the frozen item factors — one exact Cholesky solve, `O(f³)`,
+microseconds at f=128. A brand-new account gets real recommendations from its first
+ten ratings with no retraining, and it's the same code path the evaluation measures.
+
+### 5. Diversity and novelty re-ranking
+
+Relevance alone produces ten films from one cluster. A maximal-marginal-relevance
+pass trades a little relevance for spread, and a novelty term shifts weight toward
+the tail. Both are exposed as API parameters and as sliders in the UI, because the
+right balance is a matter of taste rather than a single correct value.
+
+---
+
+## Data pipeline
+
+| Stage | What it does | Cost |
+|---|---|---|
+| `app.pipeline.ingest` | MovieLens → catalogue rows + rating aggregates | ~20 s |
+| `app.pipeline.enrich enrich` | TMDB metadata for every title | ~45 min @ 33 req/s |
+| `app.pipeline.enrich discover` | imports titles MovieLens doesn't have (2023+) | minutes |
+| `app.pipeline.enrich scores` | rebuilds ranking columns on one scale | ~1 s |
+| `app.ml.train` | trains, evaluates, writes artifacts | ~25 min |
+| `app.ml.content` | builds the content matrix | ~1 min |
+
+Two decisions worth calling out:
+
+**Individual rating rows never enter the database.** There are 33.8M of them;
+inserting those through an ORM is what exhausted memory in an earlier iteration and
+left the database with a fully populated catalogue and *zero* ratings. Training
+reads `ratings.csv` directly via Arrow — **891 MB in 1.1 s** — and the catalogue
+stores only per-title aggregates. The serving path needs the item factors and the
+current user's ratings, never the historical rows.
+
+**MovieLens ends in July 2023.** It has 1,962 titles for 2022 and 79 for 2024, so
+anything recent has to come from TMDB's discover feed. That's what
+`enrich discover` is for.
+
+---
+
+## API
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/movies/home` | every home-page carousel in one response |
+| `GET /api/movies/browse` | paginated browse; genre/era/rating/language filters |
+| `GET /api/movies/search?q=` | FTS5 full-text over title, director, cast |
+| `GET /api/movies/{id}` | full record incl. trailer, cast, keywords |
+| `GET /api/movies/{id}/similar` | collaborative + content blend |
+| `GET /api/recommendations` | personalised; `diversity`, `novelty`, `genres` |
+| `POST /api/ratings` · `/batch` | rate one film, or a whole onboarding grid |
+| `GET/POST/DELETE /api/ratings/watchlist` | watchlist |
+| `GET /api/ratings/stats` | taste profile aggregates |
+| `GET /api/system/metrics` | the evaluation report above |
+| `GET /api/system/stats` | catalogue coverage and engine state |
+
+Interactive docs at `/docs`.
+
+### Performance work
+
+- **Split card and detail payloads.** A 36-tile grid was shipping 36 plot summaries,
+  cast lists and tag blobs — tens of KB that nothing rendered.
+- **Image paths, not URLs.** The API returns the bare TMDB path; the client composes
+  the width it will actually paint via `srcset`. Previously every image was
+  requested at `w500`, so a 160px thumbnail pulled a 70KB poster.
+- **FTS5 instead of `LIKE '%q%'`**, which cannot use an index and full-scanned 86k
+  rows per keystroke.
+- **Cached filter counts.** `COUNT(*)` over a filtered catalogue can't use a
+  covering index and was re-run on every page change.
+- **In-process TTL cache** replacing a Redis dependency that timed out on every
+  startup and silently disabled caching — the dependency's cost without its benefit.
+- **SQLite tuned for concurrent reads**: WAL, `mmap_size`, a 128MB page cache, and
+  `foreign_keys=ON` (off by default, so none of the declared cascades were being
+  enforced).
+- **Non-blocking startup.** Ingestion and training are explicit offline steps, so a
+  cold container answers its health check in under a second.
+
+---
+
+## Frontend
+
+React 18 · Vite 5 · Tailwind · TanStack Query · Framer Motion
+
+- Public landing page, public catalogue browse, public film pages — you can look
+  before signing up, and a film URL is shareable.
+- Onboarding grid that batch-submits ratings, so a new account is useful immediately.
+- Blur-up responsive posters: a 2-4KB `w92` placeholder, `srcset` across six widths,
+  lazy loading with a reserved aspect box so nothing reflows.
+- Optimistic rating and watchlist mutations — the star fills before the round trip.
+- ⌘K command palette with debounced instant search.
+- Route-level code splitting: a first-time visitor downloads the landing chunk
+  (~6.6KB gzipped) and nothing else.
+- Honours `prefers-reduced-motion` throughout.
+
+---
+
+## Running it
+
+### Requirements
+
+Python 3.11+ · Node 18+ · a free [TMDB API key](https://www.themoviedb.org/settings/api)
+· ~4GB disk for the dataset and artifacts
+
+### Backend
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env          # then set TMDB_API_KEY and SECRET_KEY
+
+python -m app.pipeline.ingest              # catalogue + aggregates  (~20s, downloads 335MB on first run)
+python -m app.pipeline.enrich enrich       # TMDB metadata           (~45min, resumable)
+python -m app.pipeline.enrich discover     # 2023+ titles MovieLens lacks
+python -m app.pipeline.enrich scores       # unify ranking columns
+python -m app.ml.train                     # train + evaluate        (~25min)
+python -m app.ml.content                   # content matrix
+
+uvicorn app.main:app --reload --port 8005
+```
+
+Every pipeline step is resumable and safe to re-run. `enrich` marks rows it has
+attempted, so an interrupted run picks up where it stopped rather than restarting.
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev          # http://localhost:5173
+```
+
+The dev server proxies `/api` to `127.0.0.1:8005`, so the browser sees one origin and
+never issues a CORS preflight. For a split deployment, set `VITE_API_URL`.
+
+### Tests
+
+```bash
+pytest          # 54 tests: engine components + API contract
+```
+
+### Docker
+
+```bash
+docker compose up        # API on :8005, SQLite + in-process cache
 ```
 
 ---
 
-## 🧠 Algorithmic Detail
+## Deployment
 
-### 1. Hybrid Score Blending
-For users with 5+ ratings, recommendations are scored using a linear combination:
-$$\text{Score} = w_{\text{collab}} \times \text{Prediction}_{\text{SVD\_norm}} + w_{\text{content}} \times \text{Similarity}_{\text{TF-IDF}}$$
-Where $w_{\text{collab}} = 0.7$, $w_{\text{content}} = 0.3$, and predicted collaborative ratings are normalized from $[0.5, 5.0]$ to $[0, 1]$.
+- **Frontend → Vercel.** `frontend/vercel.json` handles SPA rewrites and immutable
+  asset caching. Set `VITE_API_URL` to the API origin.
+- **Backend → Render.** `render.yaml` is a single web service with a 2GB persistent
+  disk for `movico.db` and the model artifacts.
 
-### 2. Time-Decayed Trending Score
-Unlike static popularity, the trending score downweights older reviews using exponential half-life decay:
-$$\text{Weight}(t) = 2^{-\frac{T_{\text{max}} - t}{\text{Half-Life}}}$$
-$$\text{Trending Score} = \text{Weighted Mean Rating} \times \log(1 + \sum \text{Weight})$$
-Where $T_{\text{max}}$ is the latest rating timestamp in the database and the half-life is set to **1 year**.
+Deliberately *not* Postgres + Redis: the catalogue is read-mostly and the models are
+NumPy artifacts on disk, so SQLite on a mounted disk is faster and simpler than a
+network database, and a local cache beats Redis for a single instance — no
+serialisation, no network hop. Both choices keep this inside free tiers.
 
-### 3. Explainability Engine ("Because you watched X")
-To demystify recommendations, the system scans the user's high-rated movies ($R \ge 4.0$) and computes pairwise cosine similarity against the recommended candidates:
-$$\text{Similarity}(A, B) = \cos(\theta) = \frac{\mathbf{v}_A \cdot \mathbf{v}_B}{\|\mathbf{v}_A\| \|\mathbf{v}_B\|}$$
-The highest-scoring similarity match above $0.05$ is returned as the explanation payload.
+Set `ADMIN_TOKEN` to enable the maintenance endpoints, or leave it blank to disable
+them entirely (the default, and the right setting for a public deployment).
 
 ---
 
-## 📦 API Reference
+## Project layout
 
-### Authentication (`/api/auth`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/register` | Create a new user account |
-| POST | `/api/auth/login` | Authenticate and get JWT token |
-| GET | `/api/auth/me` | Get authenticated user profile |
+```
+app/
+├── ml/                     the recommendation engine
+│   ├── dataset.py          Arrow-based interaction artifacts
+│   ├── ials.py             batched-CG implicit ALS
+│   ├── itemknn.py          shrunk item-item neighbourhood
+│   ├── content.py          weighted multi-channel TF-IDF
+│   ├── ranker.py           fusion, fold-in, MMR, attribution
+│   ├── evaluate.py         strong-generalisation metrics
+│   └── train.py            offline orchestrator
+├── pipeline/
+│   ├── ingest.py           MovieLens → catalogue
+│   ├── tmdb.py             async paced TMDB client
+│   ├── enrich.py           bulk enrichment, discover, scoring
+│   └── migrate.py          idempotent schema + FTS reconciliation
+├── api/routes/             auth · movies · ratings · recommend · system
+├── database/               ORM models, response schemas, engine
+└── services/               cache, recommendation orchestration
 
-### Movies (`/api/movies`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/movies/genres` | Get all available genres with movie counts |
-| GET | `/api/movies/trending` | Get time-decayed trending movies (paginated) |
-| GET | `/api/movies/browse` | Browse catalog with sorting, pagination, and genre/year/language filters |
-| GET | `/api/movies/search?q={query}` | Search movies with optional genre filter |
-| GET | `/api/movies/{id}` | Get single movie with full metadata |
-| GET | `/api/movies/{id}/similar` | Get similar movies (content/collaborative) |
-
-### Recommendations (`/api/recommendations`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/recommendations/` | Get personalized hybrid recommendations with explanations |
-
-**Parameters:**
-*   `limit` (default: 10) — number of recommendations
-*   `bypass_cache` (default: false) — recalculate recommendation scores
-*   `include_explanations` (default: true) — attach explanation objects to items
-
-### User Ratings & Watchlist (`/api/ratings`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/ratings/` | Submit or update a rating |
-| GET | `/api/ratings/history` | Get user's rating history (paginated) |
-| POST | `/api/ratings/watchlist` | Add movie to watchlist |
-| GET | `/api/ratings/watchlist` | Get watchlist (paginated) |
-| DELETE | `/api/ratings/watchlist/{id}` | Remove movie from watchlist |
-
-### System & Pipeline Administration (`/api/system`)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/system/health` | Health check (DB, Redis, SVD/TF-IDF Model status) |
-| GET | `/api/system/stats` | DB ingestion stats & TMDB enrichment progress |
-| GET | `/api/system/metrics` | Recommender validation metrics (RMSE, Coverage, etc.) |
-| POST | `/api/system/train` | Trigger offline training pipeline |
-| POST | `/api/system/enrich` | Trigger batch TMDB metadata enricher |
-| POST | `/api/system/import-recent` | Import popular 2024-2025 movies directly from TMDB Discover API |
-
-
----
-
-## 📤 Sample Recommendation Payload
-
-`GET /api/recommendations/?limit=1&include_explanations=true`
-
-```json
-{
-  "recommendation_type": "hybrid",
-  "movies": [
-    {
-      "id": 260,
-      "title": "Star Wars: Episode IV - A New Hope (1977)",
-      "genres": "Action|Adventure|Sci-Fi",
-      "popularity_score": 18.91,
-      "trending_score": 16.42,
-      "poster_url": "https://image.tmdb.org/t/p/w500/6FfCtAuVAW6XJjWY705F52R8OkR.jpg",
-      "backdrop_url": "https://image.tmdb.org/t/p/original/zqkmwi2qlyt5aLz8J5n1468.jpg",
-      "overview": "Princess Leia is held hostage by the evil Imperial forces...",
-      "director": "George Lucas",
-      "cast_list": "Mark Hamill, Harrison Ford, Carrie Fisher, Alec Guinness",
-      "release_date": "1977-05-25",
-      "vote_average": 8.2,
-      "runtime": 121,
-      "original_language": "en",
-      "tagline": "A long time ago in a galaxy far, far away...",
-      "user_tags": "sci-fi space classic adventure epic",
-      "explanation": {
-        "because_watched_id": 1196,
-        "because_watched_title": "Star Wars: Episode V - The Empire Strikes Back (1980)",
-        "similarity_score": 0.892,
-        "reason_type": "content",
-        "genre_match": 0.667,
-        "director_match": 0.0,
-        "theme_match": 0.892,
-        "collab_weight": 0.7,
-        "content_weight": 0.3,
-        "cast_match": 0.0,
-        "tag_match": 0.15
-      }
-    }
-  ],
-  "generated_at": "2026-07-09T11:00:00Z",
-  "execution_time_seconds": 0.0482
-}
+frontend/src/
+├── lib/                    api client, query hooks, auth, image URLs
+├── components/             Poster, MovieCard, MovieRow, CommandPalette, …
+└── pages/                  Landing, Home, Browse, MovieDetail, Onboarding, …
 ```
 
 ---
 
-## 🛠️ Quick Start (Local Setup)
+## Credits
 
-1.  **Install Dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-2.  **Configure Environment**:
-    ```bash
-    copy .env.example .env
-    ```
-    Edit `.env` to include your `TMDB_API_KEY`.
-3.  **Run Server**:
-    ```bash
-    python -m uvicorn app.main:app --reload --port 8005
-    ```
-4.  **Run Tests**:
-    ```bash
-    python -m pytest -v
-    ```
-
----
-
-## 🤖 Continuous Integration (GitHub Actions)
-
-This project includes a production-ready CI pipeline configured via `.github/workflows/backend-ci.yml`.
-
-*   **Automation**: Runs automatically on every `push` and `pull_request` to the `main` branch.
-*   **Isolated Testing Environment**: 
-    *   Spins up a lightweight **Redis 7 (Alpine)** service container to validate recommendation caching.
-    *   Creates a virtual environment with **Python 3.11** and installs all dependencies listed in `requirements.txt`.
-    *   Runs the `pytest` suite in under **1 minute** by using an in-memory SQLite database and bypassing heavy database seeding.
-*   **Verification**: Ensures that routing, payload schemas, JWT authentication, and recommendation fallback behaviors remain stable during development.
-
----
-
-## 🎨 Frontend Architecture
-
-MOVICO includes a highly polished, cinematic frontend built with **React**, **Vite**, and **Tailwind CSS**.
-* **Cinematic Design**: Features glassmorphism, widescreen movie banners (letterboxing), and typography (Bebas Neue/Manrope) matching Netflix/Max.
-* **Component-Driven**: Shared `MovieCard` components with text cleanly overlaid on dark poster gradients.
-* **Responsive Layouts**: Dynamic grids for Browse, Trending, and fully personalized Recommendation dashboards.
-
+Ratings and tags from the [MovieLens](https://grouplens.org/datasets/movielens/)
+`ml-latest` dataset (GroupLens Research, University of Minnesota). Metadata, artwork
+and trailers from [TMDB](https://www.themoviedb.org/) — this product uses the TMDB
+API but is not endorsed or certified by TMDB.

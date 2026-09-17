@@ -1,90 +1,222 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg: 6 6 10;
+    --surface: 14 14 23;
+    --surface-2: 25 25 38;
+    --hairline: 255 255 255 / 0.07;
+    --text: 244 244 247;
+    --text-dim: 155 155 173;
+    --brand: 124 92 255;
+    --brand-2: 255 77 141;
+    color-scheme: dark;
+  }
+
+  * {
+    border-color: rgb(255 255 255 / 0.07);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
-    @apply bg-background text-text-primary min-h-screen antialiased;
+    @apply bg-ink-950 text-[#F4F4F7] font-sans antialiased;
+    /* Two fixed radial washes give the page depth without a background image. */
+    background-image:
+      radial-gradient(70rem 40rem at 12% -8%, rgba(124, 92, 255, 0.14), transparent 60%),
+      radial-gradient(55rem 35rem at 92% 4%, rgba(255, 77, 141, 0.10), transparent 62%);
     background-attachment: fixed;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4 {
+    @apply tracking-snug font-semibold;
+  }
+
+  /* Respect the OS reduced-motion setting: animation here is decorative, and
+     ignoring the preference can trigger nausea for some users. */
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  ::selection {
+    background: rgb(124 92 255 / 0.35);
+  }
+
+  /* Slim, unobtrusive scrollbars that match the surface palette. */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 0.10);
+    border-radius: 99px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: rgb(255 255 255 / 0.18); background-clip: content-box; }
+
+  :focus-visible {
+    outline: 2px solid rgb(124 92 255 / 0.9);
+    outline-offset: 2px;
+    border-radius: 6px;
   }
 }
 
-@layer utilities {
-  /* ── Ambient background glow ── */
-  .ambient-glow {
-    position: fixed;
+@layer components {
+  /* ---------------------------------------------------------------- surfaces */
+
+  .glass {
+    @apply border border-white/[0.07] bg-white/[0.035] backdrop-blur-xl;
+  }
+
+  .glass-strong {
+    @apply border border-white/10 bg-ink-850/80 backdrop-blur-2xl;
+  }
+
+  .card-hairline {
+    @apply relative rounded-2xl border border-white/[0.07] bg-ink-900/60;
+  }
+
+  /* A one-pixel gradient edge, drawn with a masked pseudo-element so it works on
+     any background without a solid border. */
+  .ring-gradient {
+    position: relative;
+  }
+  .ring-gradient::before {
+    content: '';
+    position: absolute;
     inset: 0;
-    z-index: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(124, 92, 255, 0.55), rgba(255, 77, 141, 0.35), transparent 70%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
     pointer-events: none;
-    background:
-      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(139, 92, 246, 0.25) 0%, transparent 60%),
-      radial-gradient(ellipse 60% 40% at 30% 10%, rgba(59, 130, 246, 0.15) 0%, transparent 50%);
   }
 
-  /* ── Gradient pill for active nav items (Gold) ── */
-  .nav-pill-active {
-    background: linear-gradient(135deg, rgba(232, 184, 75, 0.25) 0%, rgba(212, 163, 59, 0.2) 100%);
-    border: 1px solid rgba(232, 184, 75, 0.3);
-    box-shadow: inset 0 0 12px rgba(232, 184, 75, 0.1), 0 0 8px rgba(232, 184, 75, 0.15);
+  /* ----------------------------------------------------------------- typography */
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(120deg, #FFFFFF 10%, #C9BDFF 45%, #FF9EC4 95%);
   }
 
-  /* ── Gradient AI button (Purple/Blue) ── */
-  .btn-ai {
-    background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%);
-    transition: box-shadow 0.3s ease, transform 0.2s ease;
-  }
-  .btn-ai:hover {
-    box-shadow: 0 0 20px rgba(139, 92, 246, 0.4), 0 4px 12px rgba(59, 130, 246, 0.3);
-    transform: translateY(-1px);
-  }
-  .btn-ai:active {
-    transform: translateY(0);
-  }
-  .btn-ai:disabled {
-    opacity: 0.5;
-    box-shadow: none;
-    transform: none;
+  .eyebrow {
+    @apply text-2xs font-semibold uppercase tracking-[0.18em] text-white/45;
   }
 
-  /* ── Gold primary button ── */
-  .btn-gold {
-    background: linear-gradient(135deg, #E8B84B 0%, #D4A33B 100%);
-    transition: box-shadow 0.3s ease, transform 0.2s ease;
-  }
-  .btn-gold:hover {
-    box-shadow: 0 0 20px rgba(232, 184, 75, 0.4), 0 4px 12px rgba(212, 163, 59, 0.3);
-    transform: translateY(-1px);
-  }
-  .btn-gold:active {
-    transform: translateY(0);
-  }
-  .btn-gold:disabled {
-    opacity: 0.5;
-    box-shadow: none;
-    transform: none;
+  /* -------------------------------------------------------------------- buttons */
+
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-full
+           text-sm font-semibold transition-all duration-200 ease-smooth
+           disabled:pointer-events-none disabled:opacity-45;
   }
 
-  /* ── Match percentage badge ── */
-  .badge-match {
-    @apply text-xs font-semibold px-2 py-0.5 rounded-full;
-    background: rgba(34, 211, 238, 0.15);
-    color: #22D3EE;
-    border: 1px solid rgba(34, 211, 238, 0.3);
+  .btn-primary {
+    @apply btn bg-brand-gradient px-5 py-2.5 text-white shadow-glow
+           hover:-translate-y-0.5 hover:shadow-glow-lg active:translate-y-0;
   }
 
-  /* ── Section headers ── */
-  .section-header {
-    font-family: "Bebas Neue", sans-serif;
-    @apply text-2xl tracking-wide text-text-primary uppercase;
+  .btn-secondary {
+    @apply btn border border-white/[0.09] bg-white/[0.06] px-5 py-2.5 text-white
+           hover:border-white/20 hover:bg-white/[0.11];
   }
 
-  /* ── Cinematic Slow Pan ── */
-  @keyframes slow-pan {
-    0% { transform: scale(1) translate(0, 0); }
-    50% { transform: scale(1.05) translate(-1%, -1%); }
-    100% { transform: scale(1) translate(0, 0); }
+  .btn-ghost {
+    @apply btn px-3 py-2 text-white/65 hover:bg-white/[0.07] hover:text-white;
   }
-  .animate-slow-pan {
-    animation: slow-pan 45s ease-in-out infinite alternate;
+
+  .btn-icon {
+    @apply btn h-9 w-9 rounded-full border border-white/[0.09] bg-ink-850/70 p-0
+           text-white/75 backdrop-blur hover:border-white/20 hover:text-white;
+  }
+
+  /* --------------------------------------------------------------------- chips */
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-white/[0.09]
+           bg-white/[0.05] px-2.5 py-1 text-2xs font-medium text-white/70;
+  }
+
+  .chip-active {
+    @apply border-violet-600/60 bg-violet-600/20 text-violet-400;
+  }
+
+  /* --------------------------------------------------------------------- input */
+
+  .input {
+    @apply w-full rounded-xl border border-white/[0.09] bg-ink-900/70 px-4 py-3 text-sm
+           text-white placeholder:text-white/35 transition-colors
+           focus:border-violet-600/70 focus:outline-none focus:ring-4 focus:ring-violet-600/15;
+  }
+
+  /* ------------------------------------------------------------------ skeleton */
+
+  .skeleton {
+    @apply relative overflow-hidden rounded-xl bg-white/[0.045];
+  }
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0 -translate-x-full animate-shimmer;
+    background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.07), transparent);
+  }
+
+  /* --------------------------------------------------------------- scroll rows */
+
+  .scroll-row {
+    @apply flex gap-3 overflow-x-auto pb-2;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    /* Fade the row's edges so cut-off cards read as "more to scroll". */
+    mask-image: linear-gradient(to right, transparent, #000 2%, #000 98%, transparent);
+  }
+  .scroll-row::-webkit-scrollbar { display: none; }
+  .scroll-row > * { scroll-snap-align: start; }
+}
+
+@layer utilities {
+  .noise {
+    position: relative;
+  }
+  /* Film grain: breaks up large flat gradients that otherwise show banding. */
+  .noise::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.032;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .text-balance { text-wrap: balance; }
+  .text-pretty { text-wrap: pretty; }
+
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+
+  .clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 }

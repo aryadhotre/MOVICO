@@ -1,17 +1,60 @@
-import React from 'react';
-import WatchlistPanel from '../components/WatchlistPanel';
+import { useEffect, useMemo, useRef } from 'react';
+import { Bookmark, Loader2 } from 'lucide-react';
+import MovieGrid from '../components/MovieGrid';
+import EmptyState from '../components/EmptyState';
+import { useWatchlist } from '../lib/queries';
 
 export default function Watchlist() {
+  const { data, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useWatchlist();
+
+  const movies = useMemo(
+    () => (data?.pages ?? []).flatMap((page) => (page.items ?? []).map((entry) => entry.movie)),
+    [data],
+  );
+  const total = data?.pages?.[0]?.pagination?.total_items ?? 0;
+
+  const sentinel = useRef(null);
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!node || !hasNextPage) return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isFetchingNextPage) fetchNextPage();
+      },
+      { rootMargin: '600px 0px' },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-text-primary">My Watchlist</h1>
-        <p className="text-text-secondary mt-1">Movies you want to watch later.</p>
-      </div>
-      <div className="grid grid-cols-1">
-        <WatchlistPanel />
-      </div>
-      {/* In a real app we'd add the full paginated list below */}
+    <div className="mx-auto max-w-[1500px] px-5 py-8 sm:px-6">
+      <header className="mb-8">
+        <h1 className="text-3xl font-semibold tracking-tightest text-white">Watchlist</h1>
+        <p className="mt-1.5 text-sm text-white/45">
+          {total > 0 ? `${total} film${total === 1 ? '' : 's'} saved for later` : 'Films you save land here'}
+        </p>
+      </header>
+
+      <MovieGrid
+        movies={movies}
+        loading={isLoading}
+        emptyState={
+          <EmptyState
+            icon={Bookmark}
+            title="Your watchlist is empty"
+            description="Hit the bookmark on any poster and it will show up here, ready for the next free evening."
+            action={{ to: '/app/browse', label: 'Find something to watch' }}
+          />
+        }
+      />
+
+      <div ref={sentinel} className="h-4" aria-hidden="true" />
+      {isFetchingNextPage && (
+        <div className="flex justify-center py-8">
+          <Loader2 className="h-5 w-5 animate-spin text-white/35" />
+        </div>
+      )}
     </div>
   );
 }

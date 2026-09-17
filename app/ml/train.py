@@ -231,6 +231,12 @@ def main() -> None:
     parser.add_argument("--knn-shrinkage", type=float, default=60.0)
     parser.add_argument("--eval-users", type=int, default=6000)
     parser.add_argument("--rebuild-interactions", action="store_true")
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Where to write artifacts (default: MODELS_DIR). Use a scratch path to "
+             "evaluate a configuration without replacing the serving models.",
+    )
     args = parser.parse_args()
 
     report = train(
@@ -243,6 +249,7 @@ def main() -> None:
         knn_shrinkage=args.knn_shrinkage,
         eval_users=args.eval_users,
         rebuild_interactions=args.rebuild_interactions,
+        output_dir=args.output_dir,
     )
     print(json.dumps(report["models"]["hybrid"], indent=2))
 

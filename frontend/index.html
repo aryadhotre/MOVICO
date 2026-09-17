@@ -3,12 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MOVICO</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <meta name="theme-color" content="#06060A" />
+
+    <title>MOVICO — Film recommendations that explain themselves</title>
+    <meta
+      name="description"
+      content="A hybrid movie recommender trained on 33 million ratings. Rate ten films and MOVICO finds what's worth your evening — and tells you why it picked each one."
+    />
+
+    <!-- Open Graph, so a shared link renders as a card rather than a bare URL. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="MOVICO — Film recommendations that explain themselves" />
+    <meta
+      property="og:description"
+      content="A hybrid movie recommender trained on 33 million ratings, with explained picks and controls for diversity and novelty."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Warming the TMDB image origin: every poster on the page comes from it, so
+         paying the DNS and TLS handshake up front removes it from the critical path
+         of the first image. -->
+    <link rel="preconnect" href="https://image.tmdb.org" crossorigin />
+    <link rel="dns-prefetch" href="https://image.tmdb.org" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='32' y2='32' gradientUnits='userSpaceOnUse'%3E%3Cstop stop-color='%238B6DFF'/%3E%3Cstop offset='1' stop-color='%23FF4D8D'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3Ccircle cx='16' cy='16' r='4' fill='white'/%3E%3C/svg%3E"
+    />
   </head>
-  <body class="bg-[#0B0E14] text-white">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
