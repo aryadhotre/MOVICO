@@ -32,6 +32,45 @@ ARTIFACT_DIR = os.path.join(settings.DATA_DIR, "artifacts")
 INTERACTIONS_PATH = os.path.join(ARTIFACT_DIR, "interactions.npz")
 
 
+def _load_quality(item_ids: np.ndarray) -> np.ndarray:
+    """Shrunk quality score per collaborative item, aligned to item index."""
+    from app.pipeline.ingest import connect
+
+    connection = connect()
+    try:
+        rows = dict(connection.execute("SELECT id, bayes_score FROM movies").fetchall())
+    finally:
+        connection.close()
+    return np.array(
+        [float(rows.get(int(mid)) or 0.0) for mid in item_ids], dtype=np.float32
+    )
+
+
+def _load_content(item_ids: np.ndarray):
+    """Loads the content model and maps each collaborative item to its content row.
+
+    Returns ``(model, rows)`` where ``rows[i]`` is the content-matrix index for
+    collaborative item ``i``, or -1 when the title is absent from the content model.
+    """
+    from app.ml.content import ContentModel
+
+    try:
+        model = ContentModel.load(settings.MODELS_DIR)
+    except (FileNotFoundError, OSError) as exc:
+        logger.warning("Content model unavailable (%s); fusion will skip it", exc)
+        return None, np.full(item_ids.shape[0], -1, dtype=np.int64)
+
+    lookup = model.movie_id_to_index()
+    rows = np.array(
+        [lookup.get(int(mid), -1) for mid in item_ids], dtype=np.int64
+    )
+    logger.info(
+        "Content model covers %s of %s collaborative items",
+        f"{int((rows >= 0).sum()):,}", f"{len(item_ids):,}",
+    )
+    return model, rows
+
+
 def _standardise(scores: np.ndarray) -> np.ndarray:
     """Z-scores a score vector so heterogeneous models can be blended.
 
@@ -61,6 +100,7 @@ def train(
     knn_shrinkage: float = 60.0,
     eval_users: int = 6_000,
     rebuild_interactions: bool = False,
+    reuse_models: bool = False,
     output_dir: Optional[str] = None,
 ) -> dict:
     output_dir = output_dir or settings.MODELS_DIR
@@ -92,19 +132,29 @@ def train(
     n_items = interactions.n_items
 
     # ------------------------------------------------------------------ models
-    ials = ImplicitALS(
-        factors=factors,
-        regularization=regularization,
-        reg_exponent=reg_exponent,
-        iterations=iterations,
-    ).fit(train_matrix, interactions.item_ids)
+    if reuse_models:
+        # Re-tuning the blend does not require refitting the factors, which is the
+        # expensive part. The holdout split is seeded, so the evaluation users are
+        # the same ones these artifacts were trained without.
+        logger.info("Reusing trained artifacts from %s", output_dir)
+        ials = ImplicitALS.load(output_dir)
+        knn = ItemKNN.load(output_dir)
+    else:
+        ials = ImplicitALS(
+            factors=factors,
+            regularization=regularization,
+            reg_exponent=reg_exponent,
+            iterations=iterations,
+        ).fit(train_matrix, interactions.item_ids)
 
-    knn = ItemKNN(top_k=knn_top_k, shrinkage=knn_shrinkage).fit(
-        train_matrix, interactions.item_ids
-    )
+        knn = ItemKNN(top_k=knn_top_k, shrinkage=knn_shrinkage).fit(
+            train_matrix, interactions.item_ids
+        )
 
     # ------------------------------------------------------------------ scorers
     popularity_scores = np.log1p(item_popularity).astype(np.float32)
+    quality_scores = _load_quality(interactions.item_ids)
+    content_model, content_rows = _load_content(interactions.item_ids)
 
     def score_popularity(_profile: UserProfile) -> np.ndarray:
         return popularity_scores
@@ -116,13 +166,34 @@ def train(
     def score_knn(profile: UserProfile) -> np.ndarray:
         return knn.score(profile.fit_indices, profile.fit_confidence)
 
-    def make_fusion(w_ials: float, w_knn: float, w_pop: float):
+    def score_content(profile: UserProfile) -> np.ndarray:
+        """Content similarity projected back into collaborative item space."""
+        if content_model is None:
+            return np.zeros(n_items, dtype=np.float32)
+        rows = content_rows[profile.fit_indices]
+        keep = rows >= 0
+        if not keep.any():
+            return np.zeros(n_items, dtype=np.float32)
+        raw = content_model.profile_score(rows[keep], profile.fit_confidence[keep])
+        projected = np.zeros(n_items, dtype=np.float32)
+        known = content_rows >= 0
+        projected[known] = raw[content_rows[known]]
+        return projected
+
+    def make_fusion(weights: dict[str, float]):
         def score(profile: UserProfile) -> np.ndarray:
-            return (
-                w_ials * _standardise(score_ials(profile))
-                + w_knn * _standardise(score_knn(profile))
-                + w_pop * _standardise(popularity_scores)
-            )
+            total = np.zeros(n_items, dtype=np.float32)
+            if weights.get("ials"):
+                total += weights["ials"] * _standardise(score_ials(profile))
+            if weights.get("item_knn"):
+                total += weights["item_knn"] * _standardise(score_knn(profile))
+            if weights.get("content"):
+                total += weights["content"] * _standardise(score_content(profile))
+            if weights.get("quality"):
+                total += weights["quality"] * _standardise(quality_scores)
+            if weights.get("popularity"):
+                total += weights["popularity"] * _standardise(popularity_scores)
+            return total
 
         return score
 
@@ -144,40 +215,43 @@ def train(
     tuning = HoldoutSet(profiles=holdout.profiles[:tuning_cut], training_user_mask=None)
     reporting = HoldoutSet(profiles=holdout.profiles[tuning_cut:], training_user_mask=None)
 
-    best = (None, -1.0)
-    for w_ials, w_knn, w_pop in [
-        (1.0, 0.0, 0.0),
-        (0.8, 0.2, 0.0),
-        (0.65, 0.35, 0.0),
-        (0.5, 0.5, 0.0),
-        (0.35, 0.65, 0.0),
-        (0.6, 0.35, 0.05),
-        (0.5, 0.4, 0.10),
-    ]:
+    # The serving blend used hand-picked constants. Searching them here means the
+    # deployed weights are the ones that measured best rather than the ones that
+    # looked reasonable.
+    candidates = [
+        {"ials": 1.00},
+        {"ials": 0.80, "item_knn": 0.20},
+        {"ials": 0.65, "item_knn": 0.35},
+        {"ials": 0.50, "item_knn": 0.50},
+        {"ials": 0.60, "item_knn": 0.30, "content": 0.10},
+        {"ials": 0.55, "item_knn": 0.30, "content": 0.15},
+        {"ials": 0.50, "item_knn": 0.28, "content": 0.12, "quality": 0.10},
+        {"ials": 0.46, "item_knn": 0.26, "content": 0.16, "quality": 0.12},
+        {"ials": 0.55, "item_knn": 0.30, "quality": 0.15},
+        {"ials": 0.58, "item_knn": 0.32, "content": 0.10, "popularity": 0.05},
+    ]
+
+    best_weights, best_score = None, -1.0
+    for weights in candidates:
+        label = " ".join(f"{k}={v:.2f}" for k, v in weights.items())
         trial = evaluate_scorer(
-            make_fusion(w_ials, w_knn, w_pop),
-            tuning,
-            n_items,
-            item_popularity,
-            ks=(10, 20),
-            label=f"fusion {w_ials:.2f}/{w_knn:.2f}/{w_pop:.2f}",
+            make_fusion(weights), tuning, n_items, item_popularity,
+            ks=(10, 20), label=f"fusion {label}",
         )
         score = trial.get("ndcg@10", 0.0)
-        if score > best[1]:
-            best = ((w_ials, w_knn, w_pop), score)
+        if score > best_score:
+            best_weights, best_score = weights, score
 
-    weights = best[0]
-    logger.info("Selected fusion weights iALS=%.2f kNN=%.2f pop=%.2f", *weights)
+    logger.info("Selected fusion weights: %s", best_weights)
     metrics["hybrid"] = evaluate_scorer(
-        make_fusion(*weights), reporting, n_items, item_popularity, label="hybrid"
+        make_fusion(best_weights), reporting, n_items, item_popularity, label="hybrid"
     )
-    metrics["hybrid"]["weights"] = {
-        "ials": weights[0], "item_knn": weights[1], "popularity": weights[2]
-    }
+    metrics["hybrid"]["weights"] = best_weights
 
     # ------------------------------------------------------------------ persist
-    ials.save(output_dir)
-    knn.save(output_dir)
+    if not reuse_models:
+        ials.save(output_dir)
+        knn.save(output_dir)
 
     np.savez(
         os.path.join(output_dir, "catalogue_index.npz"),
@@ -232,6 +306,11 @@ def main() -> None:
     parser.add_argument("--eval-users", type=int, default=6000)
     parser.add_argument("--rebuild-interactions", action="store_true")
     parser.add_argument(
+        "--reuse-models",
+        action="store_true",
+        help="Skip fitting and re-evaluate/re-tune the blend using saved artifacts.",
+    )
+    parser.add_argument(
         "--output-dir",
         default=None,
         help="Where to write artifacts (default: MODELS_DIR). Use a scratch path to "
@@ -249,6 +328,7 @@ def main() -> None:
         knn_shrinkage=args.knn_shrinkage,
         eval_users=args.eval_users,
         rebuild_interactions=args.rebuild_interactions,
+        reuse_models=args.reuse_models,
         output_dir=args.output_dir,
     )
     print(json.dumps(report["models"]["hybrid"], indent=2))

@@ -221,7 +221,13 @@ def search_movies(
     genre: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Full-text title/cast/director search via FTS5, ranked by relevance.
+    """Full-text title/cast/director search via FTS5.
+
+    Ranking blends BM25 with catalogue popularity. Pure BM25 answers "nolan" with
+    documentaries that have Nolan in the *title*, because a title hit outweighs a
+    director hit no matter how obscure the film. Subtracting a popularity term
+    (BM25 is negative, better matches more so) surfaces Inception and Memento
+    instead, which is what someone typing a director's name is asking for.
 
     Falls back to a LIKE scan if the FTS table has not been built, so search keeps
     working on a database that has not run the migration yet.
@@ -248,7 +254,9 @@ def search_movies(
                 JOIN movies m ON m.id = f.movie_id
                 WHERE movies_fts MATCH :expression
                   AND m.poster_path IS NOT NULL
-                ORDER BY bm25(movies_fts, 10.0, 2.0, 1.0), m.popularity_score DESC
+                ORDER BY
+                    bm25(movies_fts, 10.0, 3.0, 1.5) - (m.popularity_score / 8.0) ASC,
+                    m.popularity_score DESC
                 LIMIT :limit OFFSET :offset
                 """
             ),

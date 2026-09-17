@@ -68,12 +68,49 @@ class ScoredMovie:
     because_of: list[tuple[int, float]] = field(default_factory=list)
 
 
-def _standardise(scores: np.ndarray) -> np.ndarray:
-    """Z-scores so heterogeneous model outputs can be blended on one scale."""
-    std = float(scores.std())
+#: Score assigned to items a model has no evidence about. Zero would be wrong:
+#: in z-space zero means "exactly average", which would let a title the
+#: collaborative model has never seen outrank one it has actively scored low.
+NO_EVIDENCE = -1.0
+
+
+def _standardise(
+    scores: np.ndarray,
+    mask: Optional[np.ndarray] = None,
+    fill: float = NO_EVIDENCE,
+) -> np.ndarray:
+    """Z-scores a signal over the entries that actually carry it.
+
+    ``mask`` matters more than it looks. Only ~44k of the ~96k catalogue titles
+    have collaborative signal; the rest sit at a structural zero. Standardising
+    across all of them puts a huge spike at the mean, which collapses the standard
+    deviation and inflates the real scores to a range of roughly -16..+65. At that
+    spread the quality prior and the novelty term — worth ~2.6 between them — are
+    swamped by a factor of fourteen, and the novelty control silently does nothing.
+
+    Computing the statistics over the masked subset keeps every component on a
+    comparable scale, so the blend weights mean what they say.
+    """
+    if mask is None:
+        valid = scores
+        result = np.empty_like(scores, dtype=np.float32)
+        target = slice(None)
+    else:
+        valid = scores[mask]
+        result = np.full(scores.shape, fill, dtype=np.float32)
+        target = mask
+
+    if valid.size == 0:
+        return np.full(scores.shape, fill, dtype=np.float32)
+
+    std = float(valid.std())
     if std < 1e-9:
-        return np.zeros_like(scores)
-    return (scores - float(scores.mean())) / std
+        result[target] = 0.0
+        return result
+
+    result[target] = (valid - float(valid.mean())) / std
+    # Clip the tail so one outlier cannot dominate the blend.
+    return np.clip(result, -6.0, 6.0, out=result)
 
 
 class RecommendationEngine:
@@ -138,7 +175,7 @@ class RecommendationEngine:
             rows = connection.execute(
                 """
                 SELECT id, bayes_score, popularity_score, trending_score,
-                       release_year, poster_path, genres
+                       release_year, poster_path, genres, rating_count, vote_count
                 FROM movies
                 ORDER BY id
                 """
@@ -153,20 +190,29 @@ class RecommendationEngine:
         self.trending = np.zeros(count, dtype=np.float32)
         self.release_year = np.zeros(count, dtype=np.int32)
         self.displayable = np.zeros(count, dtype=bool)
+        self.recommendable = np.zeros(count, dtype=bool)
 
         genre_rows: list[int] = []
         genre_cols: list[int] = []
         genre_lookup: dict[str, int] = {}
 
-        for slot, (movie_id, bayes, popularity, trending, year, poster, genres) in enumerate(rows):
+        for slot, row in enumerate(rows):
+            (movie_id, bayes, popularity, trending, year, poster,
+             genres, rating_count, vote_count) = row
             self.movie_ids[slot] = movie_id
             self.quality[slot] = bayes or 0.0
             self.popularity[slot] = popularity or 0.0
             self.trending[slot] = trending or 0.0
             self.release_year[slot] = year or 0
-            # A title with no artwork renders as a broken card, so it never enters
-            # a recommendation list.
+            # A title with no artwork renders as a broken card.
             self.displayable[slot] = bool(poster)
+            # Recommending is a stronger claim than listing. A title nobody has
+            # rated cannot be stood behind, and surfacing it is what made the
+            # novelty control look broken -- it dredged up unrated obscurities
+            # rather than under-seen good films. Browse still shows everything.
+            self.recommendable[slot] = bool(poster) and (
+                (rating_count or 0) >= 3 or (vote_count or 0) >= 20
+            )
 
             for genre in (genres or "").split("|"):
                 genre = genre.strip()
@@ -265,45 +311,51 @@ class RecommendationEngine:
         components: dict[str, np.ndarray] = {}
 
         # --- collaborative latent -------------------------------------------------
+        collab_known = self.collab_slot >= 0
         if collab_idx.size:
             vector = self.ials.fold_in(collab_idx, collab_conf)
             collab_scores = self.ials.score_all(vector)
             scattered = np.zeros(len(self.movie_ids), dtype=np.float32)
-            known = self.collab_slot >= 0
-            scattered[known] = collab_scores[self.collab_slot[known]]
-            standardised = _standardise(scattered)
+            scattered[collab_known] = collab_scores[self.collab_slot[collab_known]]
+            standardised = _standardise(scattered, collab_known)
             components["ials"] = standardised
             total += WEIGHTS["ials"] * standardised
 
             knn_scores = self.knn.score(collab_idx, collab_conf)
             scattered = np.zeros(len(self.movie_ids), dtype=np.float32)
-            scattered[known] = knn_scores[self.collab_slot[known]]
-            standardised = _standardise(scattered)
+            scattered[collab_known] = knn_scores[self.collab_slot[collab_known]]
+            standardised = _standardise(scattered, collab_known)
             components["item_knn"] = standardised
             total += WEIGHTS["item_knn"] * standardised
 
         # --- content --------------------------------------------------------------
         if content_idx.size:
+            content_known = self.content_slot >= 0
             content_scores = self.content.profile_score(content_idx, content_conf)
             scattered = np.zeros(len(self.movie_ids), dtype=np.float32)
-            known = self.content_slot >= 0
-            scattered[known] = content_scores[self.content_slot[known]]
-            standardised = _standardise(scattered)
+            scattered[content_known] = content_scores[self.content_slot[content_known]]
+            standardised = _standardise(scattered, content_known)
             components["content"] = standardised
             total += WEIGHTS["content"] * standardised
 
         # --- priors ---------------------------------------------------------------
-        quality = _standardise(self.quality)
+        # Quality and novelty are defined for every title, so they need no mask.
+        quality = _standardise(self.quality, fill=0.0)
         components["quality"] = quality
         total += WEIGHTS["quality"] * quality
 
         if novelty > 0:
-            # Penalise well-known titles proportionally to log audience size.
-            total -= novelty * 0.30 * _standardise(np.log1p(self.popularity))
+            # Penalise the head without rewarding the void. Clamping at zero means
+            # a blockbuster is pushed down while an obscure title gets no bonus for
+            # obscurity alone. A symmetric penalty turns the dial into a race to the
+            # bottom: at high novelty it surfaces films nobody has rated, which is
+            # noise rather than discovery.
+            head = np.maximum(_standardise(np.log1p(self.popularity), fill=0.0), 0.0)
+            total -= novelty * 0.95 * head
 
         # --- filters --------------------------------------------------------------
         blocked = set(int(m) for m in exclude) | {int(mid) for mid, _ in rated}
-        mask = self.displayable.copy()
+        mask = self.recommendable.copy()
         for movie_id in blocked:
             slot = self.movie_index.get(movie_id)
             if slot is not None:
@@ -436,9 +488,12 @@ class RecommendationEngine:
         popularity list, then diversifies, so two new users do not see an
         identical page.
         """
-        score = 0.6 * _standardise(self.quality) + 0.4 * _standardise(np.log1p(self.trending))
+        score = (
+            0.6 * _standardise(self.quality, fill=0.0)
+            + 0.4 * _standardise(np.log1p(self.trending), fill=0.0)
+        )
 
-        mask = self.displayable.copy()
+        mask = self.recommendable.copy()
         for movie_id in exclude:
             slot = self.movie_index.get(int(movie_id))
             if slot is not None:
@@ -501,11 +556,11 @@ class RecommendationEngine:
                         scores[target] = weight
                 combined += 0.4 * _standardise(scores)
 
-        combined += 0.10 * _standardise(self.quality)
-        combined[~self.displayable] = -np.inf
+        combined += 0.10 * _standardise(self.quality, fill=0.0)
+        combined[~self.recommendable] = -np.inf
         combined[slot] = -np.inf
 
-        take = min(limit, int(self.displayable.sum()) - 1)
+        take = min(limit, int(self.recommendable.sum()) - 1)
         if take <= 0:
             return []
         top = np.argpartition(-combined, take - 1)[:take]
@@ -527,6 +582,7 @@ class RecommendationEngine:
             "loaded_at": self.loaded_at,
             "catalogue_titles": int(len(self.movie_ids)),
             "displayable_titles": int(self.displayable.sum()),
+            "recommendable_titles": int(self.recommendable.sum()),
             "collaborative_titles": int((self.collab_slot >= 0).sum()),
             "factors": int(self.ials.factors),
             "weights": WEIGHTS,
