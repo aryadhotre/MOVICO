@@ -209,12 +209,17 @@ const MovieCard = memo(function MovieCard({
         )}
       </AnimatePresence>
 
-      <Link
-        to={`/movie/${movie.id}`}
-        className="block outline-none"
-        aria-label={`${movie.title}${movie.year ? ` (${movie.year})` : ''}`}
-      >
-        <div className="relative">
+      {/* The poster frame and the watchlist control are siblings, not nested. A
+          <button> inside an <a> is invalid HTML and screen readers disagree about
+          what to do with it, so the link covers only the artwork. */}
+      <div className="relative">
+        <Link
+          to={`/movie/${movie.id}`}
+          className="block outline-none"
+          aria-label={`${movie.title}${movie.year ? ` (${movie.year})` : ''}`}
+          tabIndex={-1}
+          aria-hidden="true"
+        >
           {/* The frame line warms to tungsten on hover, like a light table coming
               up under the print. */}
           <div
@@ -224,7 +229,7 @@ const MovieCard = memo(function MovieCard({
           >
             <Poster
               path={movie.poster_path}
-              alt={movie.title}
+              alt=""
               priority={priority}
               maxWidth={342}
               rounded="rounded-none"
@@ -263,50 +268,51 @@ const MovieCard = memo(function MovieCard({
               <span
                 className="absolute inset-x-0 bottom-0 h-[3px] bg-tungsten-500"
                 style={{ opacity: Math.max(0.35, myRating / 5) }}
-                aria-hidden="true"
               />
             )}
-
-            {isAuthenticated && (
-              <button
-                type="button"
-                onClick={handleToggleSave}
-                aria-label={saved ? `Remove ${movie.title} from watchlist` : `Save ${movie.title}`}
-                aria-pressed={saved}
-                className={`absolute bottom-0 right-0 flex h-9 w-9 items-center justify-center
-                            bg-film-950/85 backdrop-blur transition-all duration-200
-                            hover:text-tungsten-400 focus-visible:opacity-100
-                            ${saved ? 'text-tungsten-500 opacity-100' : 'text-print-200 opacity-0 group-hover:opacity-100'}`}
-              >
-                {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
-              </button>
-            )}
           </div>
-        </div>
+        </Link>
 
-        <div className="mt-2.5">
-          <h3 className="clamp-2 font-display text-sm font-medium leading-tight text-print-100 transition-colors group-hover:text-tungsten-400">
-            {movie.title}
-          </h3>
+        {isAuthenticated && (
+          <button
+            type="button"
+            onClick={handleToggleSave}
+            aria-label={saved ? `Remove ${movie.title} from watchlist` : `Save ${movie.title} to watchlist`}
+            aria-pressed={saved}
+            className={`absolute bottom-0 right-0 flex h-9 w-9 items-center justify-center
+                        bg-film-950/85 backdrop-blur transition-all duration-200
+                        hover:text-tungsten-400 focus-visible:opacity-100
+                        ${saved ? 'text-tungsten-500 opacity-100' : 'text-print-200 opacity-0 group-hover:opacity-100'}`}
+          >
+            {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
+          </button>
+        )}
+      </div>
 
-          <div className="mt-1 flex items-center gap-2 font-mono text-2xs tabular-nums text-print-500">
-            {movie.year && <span>{movie.year}</span>}
-            {length && (
-              <>
-                <span className="text-print-100/15">·</span>
-                <span>{length}</span>
-              </>
-            )}
-            {movie.vote_average > 0 && (
-              <>
-                <span className="text-print-100/15">·</span>
-                <span className="flex items-center gap-0.5 text-tungsten-500">
-                  <Star className="h-2.5 w-2.5" style={{ fill: 'currentColor' }} />
-                  {movie.vote_average.toFixed(1)}
-                </span>
-              </>
-            )}
-          </div>
+      {/* The title carries the accessible link; the artwork above is decorative,
+          so the card exposes exactly one link to assistive technology. */}
+      <Link to={`/movie/${movie.id}`} className="mt-2.5 block outline-none">
+        <h3 className="clamp-2 font-display text-sm font-medium leading-tight text-print-100 transition-colors group-hover:text-tungsten-400">
+          {movie.title}
+        </h3>
+
+        <div className="mt-1 flex items-center gap-2 font-mono text-2xs tabular-nums text-print-500">
+          {movie.year && <span>{movie.year}</span>}
+          {length && (
+            <>
+              <span className="text-print-100/15">·</span>
+              <span>{length}</span>
+            </>
+          )}
+          {movie.vote_average > 0 && (
+            <>
+              <span className="text-print-100/15">·</span>
+              <span className="flex items-center gap-0.5 text-tungsten-500">
+                <Star className="h-2.5 w-2.5" style={{ fill: 'currentColor' }} />
+                {movie.vote_average.toFixed(1)}
+              </span>
+            </>
+          )}
         </div>
       </Link>
 
