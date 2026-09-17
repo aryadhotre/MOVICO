@@ -37,14 +37,12 @@ class RecommenderCoordinator:
                 sliced_recs = cached_recs[:limit]
                 execution_time = time.time() - start_time
                 
-                # Fetch movie details for response
-                movie_objs = []
-                rec_ids = []
-                for item in sliced_recs:
-                    movie = db.query(Movie).filter(Movie.id == int(item["movie_id"])).first()
-                    if movie:
-                        movie_objs.append(movie)
-                        rec_ids.append(movie.id)
+                # Fetch movie details for response in a single batch query
+                target_ids = [int(item["movie_id"]) for item in sliced_recs]
+                fetched_movies = db.query(Movie).filter(Movie.id.in_(target_ids)).all() if target_ids else []
+                movie_map = {m.id: m for m in fetched_movies}
+                movie_objs = [movie_map[mid] for mid in target_ids if mid in movie_map]
+                rec_ids = [m.id for m in movie_objs]
                 
                 # Generate explanations on-the-fly for the page returned if requested
                 explanations = {}
@@ -99,10 +97,15 @@ class RecommenderCoordinator:
             logger.warning(f"Failed to write recommendation audit log to database: {str(e)}")
             db.rollback()
 
-        # 4. Format objects as RecommendedMovieResponse
+        # 4. Format objects as RecommendedMovieResponse in a single batch query
+        target_ids = [int(item["movie_id"]) for item in sliced_recs]
+        fetched_movies = db.query(Movie).filter(Movie.id.in_(target_ids)).all() if target_ids else []
+        movie_map = {m.id: m for m in fetched_movies}
+
         formatted_movies = []
         for item in sliced_recs:
-            movie = db.query(Movie).filter(Movie.id == int(item["movie_id"])).first()
+            mid = int(item["movie_id"])
+            movie = movie_map.get(mid)
             if movie:
                 schema_movie = RecommendedMovieResponse.from_orm(movie)
                 if "explanation" in item and item["explanation"]:

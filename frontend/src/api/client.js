@@ -1,7 +1,11 @@
 const BASE_URL = 'http://localhost:8005';
 
 export async function apiFetch(path, options = {}) {
-  const token = localStorage.getItem('jwt');
+  const rawToken = localStorage.getItem('jwt');
+  const token = (rawToken && rawToken !== 'undefined' && rawToken !== 'null') ? rawToken : null;
+  if (!token && rawToken) {
+    localStorage.removeItem('jwt');
+  }
   
   const headers = {
     'Content-Type': 'application/json',

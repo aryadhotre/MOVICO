@@ -22,34 +22,26 @@ export default function Home() {
 
   useEffect(() => {
     async function fetchData() {
-      try {
-        const u = await getMe();
-        setUser(u);
-      } catch (e) {
-        // Not logged in, that's fine
-      }
-
-      try {
-        const recs = await getRecommendations({ limit: 1, includeExplanations: true });
-        if (recs && recs.movies && recs.movies.length > 0) {
-          setHeroMovie(recs.movies[0]);
-        }
-      } catch (e) {
-        setErrorHero('Failed to load recommendation.');
-      } finally {
-        setLoadingHero(false);
-      }
-
-      try {
-        const trend = await getTrending(1, 6);
-        if (trend && trend.items) {
-          setTrending(trend.items);
-        }
-      } catch (e) {
-        setErrorTrending('Failed to load trending movies.');
-      } finally {
-        setLoadingTrending(false);
-      }
+      // Execute all 3 section requests in parallel for maximum speed
+      Promise.allSettled([
+        getMe().then(u => setUser(u)).catch(() => {}),
+        getRecommendations({ limit: 1, includeExplanations: true })
+          .then(recs => {
+            if (recs && recs.movies && recs.movies.length > 0) {
+              setHeroMovie(recs.movies[0]);
+            }
+          })
+          .catch(() => setErrorHero('Failed to load recommendation.'))
+          .finally(() => setLoadingHero(false)),
+        getTrending(1, 6)
+          .then(trend => {
+            if (trend && trend.items) {
+              setTrending(trend.items);
+            }
+          })
+          .catch(() => setErrorTrending('Failed to load trending movies.'))
+          .finally(() => setLoadingTrending(false))
+      ]);
     }
     fetchData();
   }, [ratingVersion]); // re-fetch whenever a rating is submitted

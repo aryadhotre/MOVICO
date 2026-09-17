@@ -5,11 +5,22 @@ from app.config.settings import settings
 # Create database engine
 is_sqlite = settings.database_url.startswith("sqlite")
 
+from sqlalchemy import create_engine, event
+
 if is_sqlite:
     engine = create_engine(
         settings.database_url,
         connect_args={"check_same_thread": False}
     )
+    
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA cache_size=-64000")
+        cursor.execute("PRAGMA temp_store=MEMORY")
+        cursor.close()
 else:
     engine = create_engine(
         settings.database_url,

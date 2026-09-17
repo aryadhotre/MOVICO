@@ -24,8 +24,8 @@ class Movie(Base):
     genres = Column(String(255), nullable=False)
     imdb_id = Column(String(20), nullable=True)
     tmdb_id = Column(String(20), nullable=True)
-    popularity_score = Column(Float, default=0.0)
-    trending_score = Column(Float, default=0.0)
+    popularity_score = Column(Float, default=0.0, index=True)
+    trending_score = Column(Float, default=0.0, index=True)
 
     # TMDB enrichment metadata
     poster_path = Column(String(255), nullable=True)
@@ -35,8 +35,8 @@ class Movie(Base):
     director = Column(String(255), nullable=True)
     cast_list = Column(Text, nullable=True)  # Comma-separated top cast names
     runtime = Column(Integer, nullable=True)
-    vote_average = Column(Float, nullable=True)  # TMDB community vote average
-    original_language = Column(String(10), nullable=True)
+    vote_average = Column(Float, nullable=True, index=True)  # TMDB community vote average
+    original_language = Column(String(10), nullable=True, index=True)
     tagline = Column(String(500), nullable=True)
     user_tags = Column(Text, nullable=True)  # Aggregated user-generated tags from MovieLens
 
@@ -51,8 +51,8 @@ class Rating(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), nullable=False, index=True)
-    rating = Column(Float, nullable=False)
-    timestamp = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    rating = Column(Float, nullable=False, index=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), index=True)
 
     user = relationship("User", back_populates="ratings")
     movie = relationship("Movie", back_populates="ratings")
@@ -63,7 +63,7 @@ class Watchlist(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), nullable=False, index=True)
-    added_at = Column(DateTime(timezone=True), server_default=func.now())
+    added_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     user = relationship("User", back_populates="watchlist")
     movie = relationship("Movie", back_populates="watchlist")

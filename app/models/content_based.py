@@ -77,23 +77,36 @@ class ContentBasedRecommender(BaseRecommender):
         else:
             rated_movie_ids = set(rated_movie_ids)
         
-        recommendations = []
-        rank = 1
+        include_metadata = kwargs.get("include_metadata", True)
+
+        # Collect candidate movie IDs to fetch in a single batch query
+        valid_rec_ids = []
+        scores_map = {}
         for idx in candidate_indices:
             movie_id = self.idx_to_movie[idx]
             if movie_id in rated_movie_ids:
                 continue
-                
             score = float(similarities[idx])
             if score <= 0.0:
-                break  # Stop when similarity reaches 0
-                
-            include_metadata = kwargs.get("include_metadata", True)
-            movie = db.query(Movie).filter(Movie.id == movie_id).first() if include_metadata else None
+                break
+            valid_rec_ids.append(movie_id)
+            scores_map[movie_id] = score
+            if len(valid_rec_ids) >= top_n * 2:
+                break
+
+        movies_map = {}
+        if include_metadata and valid_rec_ids:
+            movies = db.query(Movie).filter(Movie.id.in_(valid_rec_ids)).all()
+            movies_map = {m.id: m for m in movies}
+
+        recommendations = []
+        rank = 1
+        for movie_id in valid_rec_ids:
+            movie = movies_map.get(movie_id) if include_metadata else None
             if not include_metadata or movie:
                 recommendations.append({
                     "movie_id": movie_id,
-                    "score": score,
+                    "score": scores_map[movie_id],
                     "rank": rank,
                     "title": movie.title if movie else "Unknown",
                     "genres": movie.genres if movie else "Unknown"
@@ -122,21 +135,32 @@ class ContentBasedRecommender(BaseRecommender):
         # Sort indices
         candidate_indices = np.argsort(similarities)[::-1]
         
-        recommendations = []
-        rank = 1
+        valid_rec_ids = []
+        scores_map = {}
         for idx in candidate_indices:
             curr_movie_id = self.idx_to_movie[idx]
             if curr_movie_id == movie_id:
-                continue # Skip the target movie itself
-                
+                continue
             score = float(similarities[idx])
             if score <= 0.0:
                 break
-                
-            movie = db.query(Movie).filter(Movie.id == curr_movie_id).first() if db else None
+            valid_rec_ids.append(curr_movie_id)
+            scores_map[curr_movie_id] = score
+            if len(valid_rec_ids) >= top_n * 2:
+                break
+
+        movies_map = {}
+        if db and valid_rec_ids:
+            movies = db.query(Movie).filter(Movie.id.in_(valid_rec_ids)).all()
+            movies_map = {m.id: m for m in movies}
+
+        recommendations = []
+        rank = 1
+        for curr_movie_id in valid_rec_ids:
+            movie = movies_map.get(curr_movie_id) if db else None
             recommendations.append({
                 "movie_id": curr_movie_id,
-                "score": score,
+                "score": scores_map[curr_movie_id],
                 "rank": rank,
                 "title": movie.title if movie else "Unknown",
                 "genres": movie.genres if movie else "Unknown"
@@ -144,7 +168,7 @@ class ContentBasedRecommender(BaseRecommender):
             rank += 1
             if len(recommendations) >= top_n:
                 break
-                
+
         return recommendations
 
     def save(self, filepath: Optional[str] = None):

@@ -116,20 +116,16 @@ def get_trending_movies(
 def browse_movies(
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     page_size: int = Query(20, ge=1, le=1000, description="Items per page"),
-    sort_by: str = Query("popularity", regex="^(popularity|trending|title|vote_average|release_date)$", description="Sort field"),
-    order: str = Query("desc", regex="^(asc|desc)$", description="Sort order"),
+    sort_by: str = Query("popularity", description="Sort field"),
+    order: str = Query("desc", description="Sort order"),
     genre: Optional[str] = Query(None, description="Filter by a single genre (e.g., 'Action')"),
     genres: Optional[str] = Query(None, description="Filter by multiple genres, comma-separated AND logic (e.g., 'Action,Sci-Fi')"),
     language: Optional[str] = Query(None, description="Filter by original language code (e.g., 'en', 'fr', 'ja')"),
-    year: Optional[str] = Query(None, regex=r"^\d{4}$", description="Filter by release year extracted from title (e.g., '1995')"),
+    year: Optional[str] = Query(None, description="Filter by release year extracted from title (e.g., '1995')"),
     db: Session = Depends(get_db)
 ):
-    """Browse the full movie catalog with pagination, sorting, and filtering.
-    
-    **Sort options:** popularity, trending, title, vote_average, release_date  
-    **Filter options:** genre, genres (multi), language, year  
-    """
-    # Map sort_by to column
+    """Browse the full movie catalog with pagination, sorting, and filtering."""
+    # Map sort_by to column with safe default fallback
     sort_column_map = {
         "popularity": Movie.popularity_score,
         "trending": Movie.trending_score,
@@ -137,12 +133,12 @@ def browse_movies(
         "vote_average": Movie.vote_average,
         "release_date": Movie.release_date,
     }
-    sort_column = sort_column_map[sort_by]
+    sort_column = sort_column_map.get(sort_by, Movie.popularity_score)
     
-    if order == "desc":
-        sort_column = sort_column.desc()
-    else:
+    if str(order).lower() == "asc":
         sort_column = sort_column.asc()
+    else:
+        sort_column = sort_column.desc()
     
     # Build filtered query
     base_query = db.query(Movie)

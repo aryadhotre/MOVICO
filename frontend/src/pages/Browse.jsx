@@ -61,7 +61,8 @@ export default function Browse() {
       setMovies(res.items || []);
       setMeta(res.pagination || { page: 1, total_pages: 1, total_items: 0 });
     } catch (err) {
-      setError('Failed to fetch movies.');
+      console.error("Browse fetch error:", err);
+      setError(err?.message || 'Failed to fetch movies.');
     } finally {
       setLoading(false);
     }
