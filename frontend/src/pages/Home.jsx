@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, Bookmark, BookmarkCheck, Play, Star } from 'lucide-react';
 import MovieRow from '../components/MovieRow';
 import CueMark from '../components/film/CueMark';
+import { useToast } from '../components/Toast';
 import { backdropSrcSet, backdropUrl } from '../lib/images';
 import { timecode } from '../lib/format';
 import {
@@ -21,6 +22,7 @@ const RATINGS_TARGET = 10;
 function Feature({ movie }) {
   const { data: savedIds } = useWatchlistIds();
   const toggleWatchlist = useToggleWatchlist();
+  const toast = useToast();
   const saved = savedIds?.has(Number(movie.id)) ?? false;
 
   return (
@@ -97,7 +99,14 @@ function Feature({ movie }) {
               </Link>
               <button
                 type="button"
-                onClick={() => toggleWatchlist.mutate({ movieId: movie.id, saved })}
+                onClick={() => {
+                  toggleWatchlist.mutate({ movieId: movie.id, saved });
+                  toast.push({
+                    kind: 'watchlist',
+                    message: saved ? 'Removed from watchlist' : 'Saved to watchlist',
+                    detail: movie.title,
+                  });
+                }}
                 className="btn-secondary"
               >
                 {saved ? <BookmarkCheck className="h-4 w-4 text-tungsten-500" /> : <Bookmark className="h-4 w-4" />}

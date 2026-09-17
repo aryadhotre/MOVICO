@@ -3,6 +3,8 @@ import { Link, Outlet } from 'react-router-dom';
 import { ArrowRight, Search } from 'lucide-react';
 import Logo from './Logo';
 import CommandPalette from './CommandPalette';
+import RouteTransition from './RouteTransition';
+import BackToTop from './BackToTop';
 import { useAuth } from '../lib/auth';
 
 /**
@@ -53,8 +55,12 @@ export default function PublicShell() {
       </header>
 
       <main className="pb-20">
-        <Outlet />
+        <RouteTransition>
+          <Outlet />
+        </RouteTransition>
       </main>
+
+      <BackToTop />
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>

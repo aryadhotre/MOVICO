@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, RefreshCw, Shuffle, SlidersHorizontal, Star } from 'lucide-react';
 import MovieCard from '../components/MovieCard';
+import { Reveal } from '../components/motion/Reveal';
 import ExplanationCard from '../components/ExplanationCard';
 import EmptyState from '../components/EmptyState';
 import { useGenres, useMyRatings, useRecommendations } from '../lib/queries';
@@ -110,6 +111,29 @@ export default function Recommendations() {
                 ? `${movies.length} films · ${data.execution_ms.toFixed(0)}ms${data.cached ? ' · cached' : ''}`
                 : 'Ranking the catalogue…'}
             </p>
+
+            {(novelty > 0 || diversity < 1 || genre) && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {diversity < 1 && (
+                  <span className="chip chip-active">Diversity {Math.round(diversity * 100)}%</span>
+                )}
+                {novelty > 0 && (
+                  <span className="chip chip-active">Novelty {Math.round(novelty * 100)}%</span>
+                )}
+                {genre && <span className="chip chip-active">{genre}</span>}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDiversity(1);
+                    setNovelty(0);
+                    setGenre('');
+                  }}
+                  className="chip"
+                >
+                  Reset
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -212,7 +236,7 @@ export default function Recommendations() {
           style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(clamp(130px, 15vw, 180px), 1fr))' }}
         >
           {movies.map((movie, index) => (
-            <div key={movie.id} className="flex flex-col">
+            <Reveal key={movie.id} delay={Math.min(index, 12) * 0.03} y={14} className="flex flex-col">
               <MovieCard movie={movie} matchScore={movie.matchScore} priority={index < 6} />
 
               {movie.explanation && (
@@ -227,13 +251,13 @@ export default function Recommendations() {
                   </button>
 
                   {expanded === movie.id && (
-                    <div className="mt-2 animate-fade-up">
+                    <div className="mt-2 animate-rise-in">
                       <ExplanationCard explanation={movie.explanation} />
                     </div>
                   )}
                 </>
               )}
-            </div>
+            </Reveal>
           ))}
         </div>
       )}

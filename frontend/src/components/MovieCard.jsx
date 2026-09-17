@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bookmark, BookmarkCheck, Info, Star } from 'lucide-react';
+import { Bookmark, BookmarkCheck, Star } from 'lucide-react';
 import Poster from './Poster';
 import RatingStars from './RatingStars';
 import { useToast } from './Toast';
@@ -12,6 +12,9 @@ import { useAuth } from '../lib/auth';
 
 /** Delay before a hover counts as intent, so sweeping across a row stays quiet. */
 const HOVER_INTENT_MS = 420;
+/** Panel footprint, used to decide which edges it can open against. */
+const PANEL_WIDTH = 320;
+const PANEL_HEIGHT = 300;
 
 /**
  * The expanded panel a card raises on sustained hover.
@@ -21,18 +24,19 @@ const HOVER_INTENT_MS = 420;
  * it only appears on a deliberate hover. Pointer-only by design; touch devices get
  * the detail page, which is the better target anyway.
  */
-function HoverPanel({ movie, saved, myRating, onRate, onToggleSave, align }) {
+function HoverPanel({ movie, saved, myRating, onRate, onToggleSave, placement }) {
   const length = formatRuntime(movie.runtime);
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8, scale: 0.97 }}
+      initial={{ opacity: 0, y: placement.vertical === 'below' ? -8 : 8, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 4, scale: 0.98 }}
+      exit={{ opacity: 0, y: placement.vertical === 'below' ? -4 : 4, scale: 0.98 }}
       transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-      className={`absolute bottom-full z-30 mb-2 hidden w-[19rem] border border-tungsten-500/35
+      className={`absolute z-30 hidden w-[19rem] border border-tungsten-500/35
                   bg-film-850/97 shadow-lift backdrop-blur-xl lg:block
-                  ${align === 'right' ? 'right-0' : 'left-0'}`}
+                  ${placement.vertical === 'below' ? 'top-full mt-2' : 'bottom-full mb-2'}
+                  ${placement.horizontal === 'right' ? 'right-0' : 'left-0'}`}
       // The panel belongs to the card's hover region; the card handles enter/leave.
       onClick={(event) => event.stopPropagation()}
     >
@@ -118,7 +122,7 @@ const MovieCard = memo(function MovieCard({
   const toast = useToast();
 
   const [hovered, setHovered] = useState(false);
-  const [align, setAlign] = useState('left');
+  const [placement, setPlacement] = useState({ vertical: 'above', horizontal: 'left' });
   const timer = useRef(null);
   const container = useRef(null);
 
@@ -132,10 +136,16 @@ const MovieCard = memo(function MovieCard({
     if (!preview || !isAuthenticated) return;
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
-      // Flip the panel inward when the card sits near the right edge, so it can
-      // never open off-screen.
+      // Place the panel against whichever edges have room. Without the vertical
+      // check it opens upward off the top of the viewport for any card in a
+      // grid's first row.
       const box = container.current?.getBoundingClientRect();
-      if (box) setAlign(box.left + 320 > window.innerWidth ? 'right' : 'left');
+      if (box) {
+        setPlacement({
+          horizontal: box.left + PANEL_WIDTH > window.innerWidth ? 'right' : 'left',
+          vertical: box.top < PANEL_HEIGHT ? 'below' : 'above',
+        });
+      }
       setHovered(true);
     }, HOVER_INTENT_MS);
   }, [preview, isAuthenticated]);
@@ -192,7 +202,7 @@ const MovieCard = memo(function MovieCard({
             movie={movie}
             saved={saved}
             myRating={myRating}
-            align={align}
+            placement={placement}
             onRate={handleRate}
             onToggleSave={handleToggleSave}
           />

@@ -192,6 +192,7 @@ right balance is a matter of taste rather than a single correct value.
 | `app.pipeline.ingest` | MovieLens → catalogue rows + rating aggregates | ~20 s |
 | `app.pipeline.enrich enrich` | TMDB metadata for every title | ~45 min @ 33 req/s |
 | `app.pipeline.enrich discover` | imports titles MovieLens doesn't have (2023+) | minutes |
+| `app.pipeline.enrich cast` | structured billing + portrait paths | ~50 min |
 | `app.pipeline.enrich scores` | rebuilds ranking columns on one scale | ~1 s |
 | `app.ml.train` | trains, evaluates, writes artifacts | ~25 min |
 | `app.ml.content` | builds the content matrix | ~1 min |
@@ -261,16 +262,60 @@ Interactive docs at `/docs`.
 
 React 18 · Vite 5 · Tailwind · TanStack Query · Framer Motion
 
-- Public landing page, public catalogue browse, public film pages — you can look
-  before signing up, and a film URL is shareable.
-- Onboarding grid that batch-submits ratings, so a new account is useful immediately.
-- Blur-up responsive posters: a 2-4KB `w92` placeholder, `srcset` across six widths,
-  lazy loading with a reserved aspect box so nothing reflows.
-- Optimistic rating and watchlist mutations — the star fills before the round trip.
-- ⌘K command palette with debounced instant search.
-- Route-level code splitting: a first-time visitor downloads the landing chunk
-  (~6.6KB gzipped) and nothing else.
-- Honours `prefers-reduced-motion` throughout.
+### Design language
+
+Built from the vocabulary of film projection rather than generic product UI.
+
+**Colour.** Film black is warm, not blue-black, so the surfaces carry a brown
+cast. The two accents are what cinema literally runs on — tungsten amber (the
+projector bulb at ~3200K) and negative teal, the "teal and orange" grade nearly
+every modern film is finished in. Print white is cream; nothing is `#FFF`.
+
+**Type.** Jost, a Futura revival — Futura is as close as cinema has to a house
+typeface, used almost exclusively by Kubrick, still by Wes Anderson, and for the
+*Alien* titles. JetBrains Mono carries technical metadata the way a camera report
+would, and runtimes are SMPTE timecode (`01:48:00`) rather than "1h 48m". Square
+corners throughout: film frames, slates and ticket stubs are rectilinear.
+
+**Film primitives** (`components/film/`):
+
+| Component | What it reproduces |
+|---|---|
+| `AcademyLeader` | the 1930 countdown leader, as the loading state — sweep hand completes one revolution per number, as the original did |
+| `CueMark` | a "cigarette burn", top-right in pairs on a long cycle, where a projectionist watched for the reel change |
+| `Perforations` | 35mm sprocket holes, as dividers and filmstrip edges |
+| `FootageCounter` | scroll progress read as film footage (90 ft/min at 24fps) |
+| `SpecSheet` | leader-dotted technical data — used for film metadata *and* the model's evaluation figures, which are literally technical specifications |
+| `Marquee` | an endlessly travelling text band |
+
+### Interaction
+
+- **Hover preview** on cards, after Netflix's pattern with Apple TV+'s restraint:
+  enough metadata to decide without leaving the row, but no autoplaying video and
+  only on sustained hover. The panel picks whichever edges have room so it can
+  never open off-screen.
+- **Cast rail** with real TMDB portraits, desaturated until hovered — a dozen
+  headshots from a dozen shoots is visually noisy, and grayscale makes them read
+  as one set while turning colour into the affordance.
+- **Taste fingerprint**: genre affinity as a radar polygon. A radar is right where
+  a bar chart is not — the question is the *shape* of a taste, and someone spread
+  across eight genres versus concentrated in two produce different silhouettes.
+- **Toast feedback** on every optimistic mutation, announced politely.
+- **Keyboard control** with a `?` reference, using the `g`-then-key chords Gmail
+  and GitHub established. Handlers stand down while focus is in a text field.
+- **⌘K command palette** with debounced instant search.
+- Route transitions, staggered reveals, count-up figures, density toggle,
+  back-to-top, and `prefers-reduced-motion` honoured throughout.
+
+### Performance
+
+- Blur-up responsive posters: a 2-4KB `w92` placeholder, `srcset` across six
+  widths, lazy loading in a reserved aspect box so nothing reflows.
+- `preconnect` to `image.tmdb.org`, since every poster comes from it.
+- TanStack Query with long stale times and `refetchOnWindowFocus` off.
+- Optimistic rating and watchlist mutations with rollback on failure.
+- Route-level code splitting: 460KB across 26 chunks, and a first-time visitor
+  downloads only the landing path.
 
 ---
 
@@ -290,6 +335,7 @@ cp .env.example .env          # then set TMDB_API_KEY and SECRET_KEY
 python -m app.pipeline.ingest              # catalogue + aggregates  (~20s, downloads 335MB on first run)
 python -m app.pipeline.enrich enrich       # TMDB metadata           (~45min, resumable)
 python -m app.pipeline.enrich discover     # 2023+ titles MovieLens lacks
+python -m app.pipeline.enrich cast         # cast portraits        (~50min, resumable)
 python -m app.pipeline.enrich scores       # unify ranking columns
 python -m app.ml.train                     # train + evaluate        (~25min)
 python -m app.ml.content                   # content matrix
@@ -364,8 +410,13 @@ app/
 └── services/               cache, recommendation orchestration
 
 frontend/src/
-├── lib/                    api client, query hooks, auth, image URLs
-├── components/             Poster, MovieCard, MovieRow, CommandPalette, …
+├── lib/                    api client, query hooks, auth, image/format helpers
+├── components/
+│   ├── film/               AcademyLeader, CueMark, Perforations, SpecSheet,
+│   │                       FootageCounter, Marquee
+│   ├── motion/             Reveal, RevealWords, Stagger, CountUp
+│   └── …                   Poster, MovieCard, CastRail, TasteFingerprint,
+│                           CommandPalette, ShortcutsOverlay, Toast
 └── pages/                  Landing, Home, Browse, MovieDetail, Onboarding, …
 ```
 

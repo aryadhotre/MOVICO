@@ -20,8 +20,12 @@ function CardSkeleton() {
  *
  * Native overflow scrolling with scroll-snap rather than a transform carousel, so
  * touch, trackpad, keyboard and screen-reader navigation all behave the way the
- * platform already does. The arrows are a pointer affordance on top, and they
- * disable at the ends so the control never lies about what it can do.
+ * platform already does. The arrows are a pointer affordance layered on top, and
+ * they disable at the ends so the control never lies about what it can do.
+ *
+ * The progress rule under the header tracks scroll position: on a row of forty
+ * titles the scrollbar is hidden, so without it there is no indication of how
+ * much remains.
  */
 export default function MovieRow({
   title,
@@ -37,12 +41,17 @@ export default function MovieRow({
   const scroller = useRef(null);
   const [atStart, setAtStart] = useState(true);
   const [atEnd, setAtEnd] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [scrollable, setScrollable] = useState(false);
 
   const syncEdges = useCallback(() => {
     const node = scroller.current;
     if (!node) return;
+    const travel = node.scrollWidth - node.clientWidth;
     setAtStart(node.scrollLeft <= 4);
-    setAtEnd(node.scrollLeft + node.clientWidth >= node.scrollWidth - 4);
+    setAtEnd(node.scrollLeft >= travel - 4);
+    setScrollable(travel > 8);
+    setProgress(travel > 0 ? node.scrollLeft / travel : 0);
   }, []);
 
   useEffect(() => {
@@ -64,7 +73,7 @@ export default function MovieRow({
   if (!loading && items.length === 0) return null;
 
   return (
-    <section className="relative">
+    <section className="group/row relative">
       <header className="mb-4 flex items-end justify-between gap-4">
         <div className="min-w-0">
           <h2 className="truncate font-display text-xl font-medium uppercase tracking-slate text-print-50 sm:text-2xl">
@@ -73,8 +82,18 @@ export default function MovieRow({
           {subtitle && <p className="tech mt-1 truncate normal-case">{subtitle}</p>}
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-3">
           {action}
+
+          {scrollable && (
+            <div className="hidden h-[2px] w-16 bg-print-100/12 lg:block" aria-hidden="true">
+              <div
+                className="h-full bg-tungsten-500 transition-[width] duration-150 ease-out"
+                style={{ width: `${Math.max(8, progress * 100)}%` }}
+              />
+            </div>
+          )}
+
           <div className="hidden items-center gap-1.5 sm:flex">
             <button
               type="button"

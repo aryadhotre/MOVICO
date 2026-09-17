@@ -4,6 +4,8 @@ import { Bookmark, Clapperboard, Compass, LogOut, Search, Star, User as UserIcon
 import Logo from './Logo';
 import CommandPalette from './CommandPalette';
 import ShortcutsOverlay, { useShortcuts } from './ShortcutsOverlay';
+import RouteTransition from './RouteTransition';
+import BackToTop from './BackToTop';
 import { useAuth } from '../lib/auth';
 
 const NAV = [
@@ -132,8 +134,12 @@ export default function Layout() {
       </header>
 
       <main className="pb-24 lg:pb-16 lg:pl-[236px]">
-        <Outlet />
+        <RouteTransition>
+          <Outlet />
+        </RouteTransition>
       </main>
+
+      <BackToTop />
 
       {/* ------------------------------------------------------ mobile tabbar */}
       <nav
