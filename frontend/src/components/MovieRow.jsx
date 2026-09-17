@@ -128,6 +128,12 @@ export default function MovieRow({
                 spine={spined ? index + 1 : null}
                 matchScore={showMatch ? movie.matchScore ?? null : null}
                 priority={index < priorityCount}
+                // No hover preview inside a row. The scroller sets overflow-x
+                // plus an edge mask, and per spec a non-visible overflow on one
+                // axis forces the other to compute to auto — so a panel that
+                // extends above or below the card is clipped away entirely.
+                // Grids have no such container, which is where the preview lives.
+                preview={false}
                 className={CARD_WIDTH}
               />
             ))}
